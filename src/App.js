@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 // ── 색상 (로고 — 오직 주님 블루 그라데이션 톤) ────────────────────────
 const C = {
@@ -343,13 +343,13 @@ function ProductManager({ products, setProducts, w }) {
         ))}
       </div>
 
-      <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 520 : 640 }}>
+      <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 560 : 680 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
-              <th style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: C.muted, borderBottom: `1px solid ${C.border}`, fontSize: 12, width: 48 }}>번호</th>
-              {["품명","매입원가(입고가)","판매가","마진",""].map(h => (
-                <th key={h} style={{ padding: "10px 14px", textAlign: h === "품명" ? "left" : "right", fontWeight: 700, color: C.muted, borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>{h}</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", width: 64 }}>번호</th>
+              {["품명","매입원가(입고가)","판매가","마진","관리"].map(h => (
+                <th key={h} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -359,14 +359,14 @@ function ProductManager({ products, setProducts, w }) {
               : filtered.map((p, i) => {
                 const m = (Number(p.price) || 0) - (Number(p.cost) || 0);
                 return (
-                  <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "11px 14px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: "11px 14px", fontWeight: 700 }}>{p.name}</td>
-                    <td style={{ padding: "11px 14px", textAlign: "right", color: C.muted }}>{won(p.cost)}</td>
-                    <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 600 }}>{won(p.price)}</td>
-                    <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
-                    <td style={{ padding: "11px 14px", textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
+                    <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700 }}>{p.name}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted }}>{won(p.cost)}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 600 }}>{won(p.price)}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                         <button style={{ ...S.btn(C.navy), padding: "5px 10px", fontSize: 11 }} onClick={() => startEdit(p)}>수정</button>
                         <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => remove(p.id)}>삭제</button>
                       </div>
@@ -394,6 +394,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 정보수정/구매내역 버튼 노출용
   const [historyId, setHistoryId] = useState(null);
+  const [historyTab, setHistoryTab] = useState("byRound"); // all | byRound
 
   useEffect(() => { setRows(members); }, [members]);
 
@@ -512,6 +513,15 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const historyTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
   const historyTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
 
+  // 🤖 전체 구매내역 — 차수 구분 없이 물품별로 합산
+  const historyAllItems = [];
+  memberOrders.forEach(o => o.items.forEach(it => {
+    const existing = historyAllItems.find(i => i.name === it.name);
+    if (existing) { existing.qty += it.qty; existing.total += it.price * it.qty; }
+    else historyAllItems.push({ name: it.name, qty: it.qty, total: it.price * it.qty });
+  }));
+  historyAllItems.sort((a, b) => b.total - a.total);
+
   return (
     <div>
       <Title eyebrow="Members" title="회원 명단" sub="회원을 클릭해서 선택하면 정보수정 / 구매내역 버튼이 나타나요" w={w}
@@ -581,23 +591,64 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
               <div style={{ fontWeight: 800, fontSize: 17 }}>🛒 {historyMember?.name} 구매내역</div>
               <button onClick={() => setHistoryId(null)} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
             </div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>누적 <strong style={{ color: C.ink }}>{historyTotalQty}개</strong> · <strong style={{ color: C.accent }}>{won(historyTotalPrice)}</strong></div>
-            {historyByRound.length === 0
-              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>구매 이력이 없습니다</div>
-              : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {historyByRound.map(g => (
-                    <div key={g.roundId || "none"} style={{ backgroundColor: C.bg, borderRadius: 10, padding: 14 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
-                        <span style={{ fontSize: 14, fontWeight: 800 }}>{won(g.totalPrice)}</span>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>누적 <strong style={{ color: C.ink }}>{historyTotalQty}개</strong> · <strong style={{ color: C.accent }}>{won(historyTotalPrice)}</strong></div>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {[{ id: "byRound", label: "차수별 구매내역" }, { id: "all", label: "전체 구매내역" }].map(t => (
+                <button key={t.id} onClick={() => setHistoryTab(t.id)} style={{ border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", backgroundColor: historyTab === t.id ? C.accent : C.bg, color: historyTab === t.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{t.label}</button>
+              ))}
+            </div>
+
+            {historyTab === "byRound" ? (
+              historyByRound.length === 0
+                ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>구매 이력이 없습니다</div>
+                : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {historyByRound.map(g => (
+                      <div key={g.roundId || "none"} style={{ backgroundColor: C.bg, borderRadius: 10, padding: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
+                          <span style={{ fontSize: 14, fontWeight: 800 }}>{won(g.totalPrice)}</span>
+                        </div>
+                        <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, marginBottom: 8 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                        <Badge text={g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`} color={g.paidAmount >= g.totalPrice ? C.green : C.red} bg={g.paidAmount >= g.totalPrice ? C.greenLight : C.redLight} />
                       </div>
-                      <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, marginBottom: 8 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
-                      <Badge text={g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`} color={g.paidAmount >= g.totalPrice ? C.green : C.red} bg={g.paidAmount >= g.totalPrice ? C.greenLight : C.redLight} />
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )
+            ) : (
+              historyAllItems.length === 0
+                ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>구매 이력이 없습니다</div>
+                : (
+                  <div style={{ ...S.card, padding: 0, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ backgroundColor: C.bg }}>
+                          {["물품","수량","금액"].map(h => (
+                            <th key={h} style={{ padding: "9px 12px", textAlign: h === "물품" ? "left" : "right", fontWeight: 700, color: C.muted, fontSize: 11.5, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historyAllItems.map((it, i) => (
+                          <tr key={it.name} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
+                            <td style={{ padding: "9px 12px", fontWeight: 700 }}>{it.name}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right" }}>{it.qty}개</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700 }}>{won(it.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ backgroundColor: C.accentLight, fontWeight: 800 }}>
+                          <td style={{ padding: "9px 12px" }}>합계</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>{historyTotalQty}개</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>{won(historyTotalPrice)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+            )}
           </div>
         </div>
       )}
@@ -613,15 +664,15 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
-              <th style={{ padding: "11px 10px", textAlign: "center", borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, width: 36 }}>
+              <th style={{ padding: "12px 10px", textAlign: "center", borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, width: 40 }}>
                 <input type="checkbox" checked={filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id))} onChange={() => toggleSelectAll(filtered.map(r => r.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
               </th>
-              <th style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, width: 50 }}>번호</th>
-              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 100 }}>이름</th>
-              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 130 }}>전화번호</th>
-              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 90 }}>직분</th>
-              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 140 }}>비고</th>
-              <th style={{ padding: "11px 10px", borderBottom: `2px solid ${C.border}`, minWidth: 180 }}></th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, whiteSpace: "nowrap", width: 56 }}>번호</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 110 }}>이름</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 130 }}>전화번호</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 90 }}>직분</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 140 }}>비고</th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, minWidth: 180 }}>관리</th>
             </tr>
           </thead>
           <tbody>
@@ -632,19 +683,19 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                 return (
                   <tr key={r.id} onClick={() => selectRow(r)} style={{
                     cursor: "pointer",
-                    backgroundColor: isSelected ? C.accentLight : selectedIds.includes(r.id) ? C.bg : (i % 2 === 1 ? "rgba(0,0,0,0.015)" : "transparent"),
+                    backgroundColor: isSelected ? C.accentLight : selectedIds.includes(r.id) ? C.bg : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
                     boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
                   }}>
-                    <td style={{ padding: "10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+                    <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
                     </td>
-                    <td style={{ padding: "10px", textAlign: "center", color: C.muted, fontWeight: 600, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{i + 1}</td>
-                    <td style={{ padding: "10px", fontWeight: 700, color: isSelected ? C.accent : C.ink, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.name}</td>
-                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.phone || <span style={{ color: C.border }}>–</span>}</td>
-                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.position || <span style={{ color: C.border }}>–</span>}</td>
-                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
-                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <td style={{ padding: "11px 10px", textAlign: "center", color: C.muted, fontWeight: 600, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{i + 1}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 700, color: isSelected ? C.accent : C.ink, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.name}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.phone || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.position || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "8px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                         {isSelected && (
                           <>
                             <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => openEdit(r)}>✏️ 정보수정</button>
@@ -1391,6 +1442,208 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   );
 }
 
+
+// ════════════════════════════════════════════════════════════════════
+//  분기별 보고 (월/차수별 사업회계 집계)
+// ════════════════════════════════════════════════════════════════════
+function QuarterlyReport({ orders, rounds, w }) {
+  const mob = isMob(w);
+  const thisYear = new Date().getFullYear();
+  const thisMonth = new Date().getMonth() + 1;
+  const defaultStart = Math.floor((thisMonth - 1) / 3) * 3 + 1; // 현재 달이 속한 분기의 시작월
+
+  const [year, setYear] = useState(thisYear);
+  const [startMonth, setStartMonth] = useState(defaultStart);
+  const [endMonth, setEndMonth] = useState(defaultStart + 2);
+
+  const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+  const weekRoundNo = (week) => weekOptions.indexOf(week) + 1;
+
+  const quarterPresets = [
+    { label: "1분기 (1~3월)", start: 1, end: 3 },
+    { label: "2분기 (4~6월)", start: 4, end: 6 },
+    { label: "3분기 (7~9월)", start: 7, end: 9 },
+    { label: "4분기 (10~12월)", start: 10, end: 12 },
+  ];
+
+  // 🤖 연도/월 정보가 있는 차수만 대상으로, 선택한 기간에 속한 차수를 월별로 묶음
+  const roundsInRange = rounds
+    .filter(r => r.year === year && r.month >= startMonth && r.month <= endMonth)
+    .slice()
+    .sort((a, b) => (a.month - b.month) || (weekRoundNo(a.week) - weekRoundNo(b.week)));
+
+  const monthGroups = [];
+  roundsInRange.forEach(r => {
+    let g = monthGroups.find(m => m.month === r.month);
+    if (!g) { g = { month: r.month, rounds: [] }; monthGroups.push(g); }
+    g.rounds.push(r);
+  });
+
+  // 각 차수별 물품 집계(수량/단가/금액)
+  const buildRoundItems = (round) => {
+    const agg = {};
+    orders.filter(o => o.roundId === round.id).forEach(o => o.items.forEach(it => {
+      if (!agg[it.name]) agg[it.name] = { name: it.name, qty: 0, total: 0 };
+      agg[it.name].qty += it.qty;
+      agg[it.name].total += it.price * it.qty;
+    }));
+    return Object.values(agg);
+  };
+
+  monthGroups.forEach(g => {
+    g.roundData = g.rounds.map(r => {
+      const items = buildRoundItems(r);
+      const subtotal = items.reduce((s, i) => s + i.total, 0);
+      return { round: r, items, subtotal };
+    });
+    g.monthTotal = g.roundData.reduce((s, rd) => s + rd.subtotal, 0);
+  });
+  const grandTotal = monthGroups.reduce((s, g) => s + g.monthTotal, 0);
+  const periodLabel = startMonth === endMonth ? `${startMonth}월` : `${startMonth}~${endMonth}월`;
+
+  const exportExcel = () => {
+    const rowsOut = [["월구분", "품명", "수량", "단가", "금액"]];
+    monthGroups.forEach(g => {
+      g.roundData.forEach(rd => {
+        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round.week)}차(${rd.round.week})`, "", "", ""]);
+        rd.items.forEach(it => rowsOut.push(["", it.name, it.qty, Math.round(it.total / it.qty), it.total]));
+      });
+      rowsOut.push([`${g.month}월 합계`, "", "", "", g.monthTotal]);
+    });
+    rowsOut.push([`${year}년 ${periodLabel} 총합계`, "", "", "", grandTotal]);
+    const escapeCell = (v) => {
+      const s = String(v == null ? "" : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = rowsOut.map(r => r.map(escapeCell).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${year}년_${periodLabel}_사업회계.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const copyReport = () => {
+    let text = `📊 ${year}년 ${periodLabel} 사업회계 보고\n\n`;
+    monthGroups.forEach(g => {
+      text += `■ ${g.month}월\n`;
+      g.roundData.forEach(rd => {
+        text += `  [${weekRoundNo(rd.round.week)}차(${rd.round.week})]\n`;
+        rd.items.forEach(it => { text += `   - ${it.name} ${it.qty}개 : ${won(it.total)}\n`; });
+      });
+      text += `  ${g.month}월 합계: ${won(g.monthTotal)}\n\n`;
+    });
+    text += `${year}년 ${periodLabel} 사업회계 총합계: ${won(grandTotal)}`;
+    navigator.clipboard.writeText(text);
+    alert("보고서가 클립보드에 복사되었습니다!");
+  };
+
+  return (
+    <div>
+      <Title eyebrow="Quarterly" title="분기별 보고" sub="기간을 정하면 그 안의 차수들을 월별로 묶어서 사업회계 보고서를 만들어줘요" w={w}
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
+            <button style={S.btn(C.navy)} onClick={copyReport}>📋 보고서 복사</button>
+          </div>
+        } />
+
+      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 기간 설정</div>
+        <Grid cols={3} w={w}>
+          <Field label="연도">
+            <select style={S.select} value={year} onChange={e => setYear(Number(e.target.value))}>
+              {Array.from({ length: 6 }, (_, i) => thisYear - 1 + i).map(y => <option key={y} value={y}>{y}년</option>)}
+            </select>
+          </Field>
+          <Field label="시작월">
+            <select style={S.select} value={startMonth} onChange={e => setStartMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+            </select>
+          </Field>
+          <Field label="종료월">
+            <select style={S.select} value={endMonth} onChange={e => setEndMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+            </select>
+          </Field>
+        </Grid>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {quarterPresets.map(q => (
+            <button key={q.label} onClick={() => { setStartMonth(q.start); setEndMonth(q.end); }}
+              style={{ borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: startMonth === q.start && endMonth === q.end ? C.accent : C.surface, color: startMonth === q.start && endMonth === q.end ? "#fff" : C.muted, fontFamily: "inherit", border: `1px solid ${startMonth === q.start && endMonth === q.end ? C.accent : C.border}` }}>{q.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, background: C.gradient, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 20, boxShadow: "0 6px 18px rgba(15,46,79,0.18)" }}>
+        <span style={{ fontSize: mob ? 22 : 26 }}>📊</span>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>{year}년 {periodLabel} 사업회계 총합계</div>
+          <div style={{ fontSize: mob ? 20 : 24, fontWeight: 900 }}>{won(grandTotal)}</div>
+        </div>
+      </div>
+
+      {monthGroups.length === 0 ? (
+        <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>이 기간에 연도/월 정보가 있는 차수가 없습니다. 차수 관리에서 연도/월/주차를 지정해 만든 차수만 집계돼요.</div>
+      ) : (
+        <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
+            <thead>
+              <tr style={{ backgroundColor: C.navy }}>
+                {["월구분","품명","수량","단가","금액"].map(h => (
+                  <th key={h} style={{ padding: "11px 10px", textAlign: h === "품명" ? "left" : "center", fontWeight: 800, color: "#fff", fontSize: 12, border: `1px solid rgba(255,255,255,0.15)` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {monthGroups.map(g => {
+                const monthRowSpan = g.roundData.reduce((s, rd) => s + 1 + rd.items.length, 0);
+                let monthCellUsed = false;
+                return (
+                  <React.Fragment key={g.month}>
+                    {g.roundData.map((rd, ri) => (
+                      <React.Fragment key={rd.round.id}>
+                        <tr style={{ backgroundColor: C.bg }}>
+                          {!monthCellUsed && (monthCellUsed = true) && (
+                            <td rowSpan={monthRowSpan} style={{ padding: "10px", textAlign: "center", fontWeight: 800, color: C.accent, fontSize: 15, border: `1px solid ${C.border}`, backgroundColor: C.accentLight, verticalAlign: "middle" }}>{g.month}월</td>
+                          )}
+                          <td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", fontWeight: 700, color: C.navy, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round.week)}차({rd.round.week})</td>
+                        </tr>
+                        {rd.items.map((it, ii) => (
+                          <tr key={ii} style={{ backgroundColor: ii % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
+                            <td style={{ padding: "9px 10px", border: `1px solid ${C.border}` }}>{it.name}</td>
+                            <td style={{ padding: "9px 10px", textAlign: "center", border: `1px solid ${C.border}` }}>{it.qty}</td>
+                            <td style={{ padding: "9px 10px", textAlign: "right", border: `1px solid ${C.border}`, color: C.muted }}>{won(Math.round(it.total / it.qty))}</td>
+                            <td style={{ padding: "9px 10px", textAlign: "right", border: `1px solid ${C.border}`, fontWeight: 700 }}>{won(it.total)}</td>
+                          </tr>
+                        ))}
+                        {rd.items.length === 0 && (
+                          <tr><td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    <tr style={{ backgroundColor: C.bg }}>
+                      <td colSpan={4} style={{ padding: "10px", textAlign: "center", fontWeight: 800, border: `1px solid ${C.border}` }}>{g.month}월 합계</td>
+                      <td style={{ padding: "10px", textAlign: "right", fontWeight: 800, border: `1px solid ${C.border}`, color: C.accent }}>{won(g.monthTotal)}</td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+              <tr style={{ backgroundColor: C.navy }}>
+                <td colSpan={4} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{year}년 {periodLabel} 사업회계 총합계</td>
+                <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: 900, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 // ════════════════════════════════════════════════════════════════════
 //  앱 루트
 // ════════════════════════════════════════════════════════════════════
@@ -1449,6 +1702,7 @@ export default function App() {
     { id: "orders", label: "주문 리스트", icon: "📋" },
     { id: "products", label: "물품 관리", icon: "📦" },
     { id: "members", label: "회원 명단", icon: "📇" },
+    { id: "quarterly", label: "분기별 보고", icon: "📊" },
   ];
   const goTo = (id) => { setPage(id); setMenuOpen(false); };
 
@@ -1459,6 +1713,7 @@ export default function App() {
       case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} setProducts={setProducts} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} w={w} />;
       case "members": return <MemberRegistry members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} />;
+      case "quarterly": return <QuarterlyReport orders={orders} rounds={rounds} w={w} />;
       default: return null;
     }
   };
