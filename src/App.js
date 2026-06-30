@@ -380,26 +380,29 @@ function ProductManager({ products, setProducts, w }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  회원 교적관리 (엑셀식 표)
+//  회원 명단
 // ════════════════════════════════════════════════════════════════════
-function MemberRegistry({ members, setMembers, w }) {
+function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const mob = isMob(w);
   const [rows, setRows] = useState(members);
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 클릭해서 보더로 선택 표시 + 우측 구매내역 버튼 노출용
+  const [historyId, setHistoryId] = useState(null); // 🤖 구매내역 팝업 대상 회원 id
 
   useEffect(() => { setRows(members); }, [members]);
 
-  // 🤖 표 컬럼 (번호 제외, 요청하신 순서 그대로)
+  // 🤖 전체 데이터 컬럼 (엑셀 붙여넣기/내보내기/수정팝업에서 사용, 표에는 일부만 표시)
   const cols = [
     { key: "birthYear1", label: "출생년도", w: 80 },
     { key: "visit", label: "심방여부", w: 70, type: "check" },
     { key: "group1", label: "회원구분1", w: 90 },
     { key: "group2", label: "회원구분2", w: 90 },
     { key: "name", label: "이름", w: 90 },
-    { key: "phone", label: "연락처", w: 120 },
+    { key: "phone", label: "전화번호", w: 120 },
+    { key: "position", label: "직분", w: 80 },
     { key: "address", label: "주소", w: 160 },
     { key: "birthYear2", label: "출생년도", w: 80 },
     { key: "birthMonth", label: "월", w: 50 },
@@ -409,6 +412,12 @@ function MemberRegistry({ members, setMembers, w }) {
     { key: "note", label: "비고", w: 120 },
     { key: "childbirth", label: "출산", w: 80 },
     { key: "celebrate", label: "축하내용", w: 140 },
+  ];
+
+  // 🤖 표에는 번호/이름/전화번호/직분만 보여줌 (나머지는 이름 클릭 시 팝업에서)
+  const displayCols = [
+    { key: "phone", label: "전화번호" },
+    { key: "position", label: "직분" },
   ];
 
   const blankRow = () => {
@@ -431,6 +440,7 @@ function MemberRegistry({ members, setMembers, w }) {
     commit(u);
     if (editingId === id) { setEditingId(null); setForm(null); }
     setSelectedIds(sel => sel.filter(x => x !== id));
+    if (selectedRowId === id) setSelectedRowId(null);
   };
 
   const toggleSelect = (id) => setSelectedIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
@@ -447,7 +457,7 @@ function MemberRegistry({ members, setMembers, w }) {
     setSelectedIds([]);
   };
 
-  const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); };
+  const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setSelectedRowId(r.id); };
   const closeEdit = () => { setEditingId(null); setForm(null); };
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const saveEdit = () => {
@@ -497,16 +507,36 @@ function MemberRegistry({ members, setMembers, w }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `회원교적부_${todayStr()}.csv`;
+    a.download = `회원명단_${todayStr()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
+  // 🤖 구매내역 집계 (선택된 회원의 차수별 주문 이력)
+  const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
+  const historyMember = historyId ? rows.find(r => r.id === historyId) : null;
+  const memberOrders = historyId ? orders.filter(o => o.memberId === historyId) : [];
+  const historyByRound = [];
+  memberOrders.forEach(o => {
+    let group = historyByRound.find(g => g.roundId === o.roundId);
+    if (!group) { group = { roundId: o.roundId, roundName: roundName(o.roundId), items: [], totalPrice: 0, paidAmount: 0, date: o.date }; historyByRound.push(group); }
+    o.items.forEach(it => {
+      const existing = group.items.find(i => i.name === it.name);
+      if (existing) existing.qty += it.qty;
+      else group.items.push({ name: it.name, qty: it.qty });
+    });
+    group.totalPrice += o.totalPrice;
+    group.paidAmount += o.paidAmount || 0;
+  });
+  historyByRound.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const historyTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
+  const historyTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
+
   return (
     <div>
-      <Title eyebrow="Registry" title="회원 교적관리" sub="표에서 이름을 클릭하면 팝업으로 세부 정보를 입력/수정할 수 있어요" w={w}
+      <Title eyebrow="Members" title="회원 명단" sub="이름을 클릭하면 팝업으로 정보를 수정할 수 있고, 선택된 회원은 우측 버튼으로 구매내역도 볼 수 있어요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
@@ -544,7 +574,12 @@ function MemberRegistry({ members, setMembers, w }) {
 
             <Grid cols={3} w={w}>
               <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
-              <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+              <Field label="전화번호"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+              <Field label="직분"><input style={S.input} value={form.position} onChange={e => setF("position", e.target.value)} placeholder="예: 집사, 권사" /></Field>
+            </Grid>
+            <Grid cols={3} w={w}>
+              <Field label="회원구분1"><input style={S.input} value={form.group1} onChange={e => setF("group1", e.target.value)} /></Field>
+              <Field label="회원구분2"><input style={S.input} value={form.group2} onChange={e => setF("group2", e.target.value)} /></Field>
               <Field label="심방여부">
                 <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer" }}>
                   <input type="checkbox" checked={!!form.visit} onChange={e => setF("visit", e.target.checked)} style={{ width: 17, height: 17, cursor: "pointer" }} />
@@ -552,15 +587,10 @@ function MemberRegistry({ members, setMembers, w }) {
                 </label>
               </Field>
             </Grid>
-            <Grid cols={3} w={w}>
-              <Field label="회원구분1"><input style={S.input} value={form.group1} onChange={e => setF("group1", e.target.value)} /></Field>
-              <Field label="회원구분2"><input style={S.input} value={form.group2} onChange={e => setF("group2", e.target.value)} /></Field>
-              <Field label="출생년도"><input style={S.input} value={form.birthYear1} onChange={e => setF("birthYear1", e.target.value)} placeholder="1990" /></Field>
-            </Grid>
             <Field label="주소"><input style={{ ...S.input, marginBottom: 12 }} value={form.address} onChange={e => setF("address", e.target.value)} placeholder="주소" /></Field>
 
             <Grid cols={3} w={w}>
-              <Field label="출생년도(2)"><input style={S.input} value={form.birthYear2} onChange={e => setF("birthYear2", e.target.value)} placeholder="1990" /></Field>
+              <Field label="출생년도"><input style={S.input} value={form.birthYear1} onChange={e => setF("birthYear1", e.target.value)} placeholder="1990" /></Field>
               <Field label="월"><input style={S.input} value={form.birthMonth} onChange={e => setF("birthMonth", e.target.value)} placeholder="01" /></Field>
               <Field label="일"><input style={S.input} value={form.birthDay} onChange={e => setF("birthDay", e.target.value)} placeholder="01" /></Field>
             </Grid>
@@ -585,44 +615,80 @@ function MemberRegistry({ members, setMembers, w }) {
         </div>
       )}
 
+      {/* 🤖 구매내역 팝업 */}
+      {historyId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, backgroundColor: "rgba(15,46,79,0.45)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center", padding: mob ? 0 : 20 }} onClick={() => setHistoryId(null)}>
+          <div
+            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "26px 28px", maxWidth: 560, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>🛒 {historyMember?.name} 구매내역</div>
+              <button onClick={() => setHistoryId(null)} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>누적 <strong style={{ color: C.ink }}>{historyTotalQty}개</strong> · <strong style={{ color: C.accent }}>{won(historyTotalPrice)}</strong></div>
+            {historyByRound.length === 0
+              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>구매 이력이 없습니다</div>
+              : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {historyByRound.map(g => (
+                    <div key={g.roundId || "none"} style={{ backgroundColor: C.bg, borderRadius: 10, padding: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
+                        <span style={{ fontSize: 14, fontWeight: 800 }}>{won(g.totalPrice)}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, marginBottom: 8 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                      <Badge text={g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`} color={g.paidAmount >= g.totalPrice ? C.green : C.red} bg={g.paidAmount >= g.totalPrice ? C.greenLight : C.redLight} />
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+        </div>
+      )}
+
       <div style={{ marginBottom: 14 }}>
-        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (출생년도, 심방여부(O), 회원구분1, 회원구분2, 이름, 연락처, 주소, 출생년도, 월, 일, 남편, 자녀(출생년도), 비고, 출산, 축하내용 순서)</label>
+        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (출생년도, 심방여부(O), 회원구분1, 회원구분2, 이름, 전화번호, 직분, 주소, 출생년도, 월, 일, 남편, 자녀(출생년도), 비고, 출산, 축하내용 순서)</label>
         <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 표 순서 그대로 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
       </div>
 
       <input style={{ ...S.input, marginBottom: 12, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
 
       <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 1380 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
               <th style={{ padding: "9px 6px", textAlign: "center", borderBottom: `1px solid ${C.border}`, minWidth: 32 }}>
                 <input type="checkbox" checked={filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id))} onChange={() => toggleSelectAll(filtered.map(r => r.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
               </th>
-              <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 36 }}>번호</th>
-              {cols.map((c, i) => <th key={c.key + i} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: c.w }}>{c.label}</th>)}
-              <th style={{ padding: "9px 6px", borderBottom: `1px solid ${C.border}`, minWidth: 40 }}></th>
+              <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 40 }}>번호</th>
+              <th style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 100 }}>이름</th>
+              {displayCols.map(c => <th key={c.key} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{c.label}</th>)}
+              <th style={{ padding: "9px 6px", borderBottom: `1px solid ${C.border}` }}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={cols.length + 3} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
+              ? <tr><td colSpan={displayCols.length + 4} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
               : filtered.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: selectedIds.includes(r.id) ? C.accentLight : editingId === r.id ? C.accentLight : "transparent" }}>
+                <tr key={r.id} style={{
+                  borderBottom: `1px solid ${C.border}`,
+                  border: selectedRowId === r.id ? `2px solid ${C.accent}` : undefined,
+                  backgroundColor: selectedIds.includes(r.id) ? C.accentLight : selectedRowId === r.id ? C.accentLight : "transparent",
+                }}>
                   <td style={{ padding: "9px 6px", textAlign: "center" }}>
                     <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
                   </td>
                   <td style={{ padding: "9px 6px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                  {cols.map((c, ci) => (
-                    <td key={c.key + ci} style={{ padding: "9px 6px", cursor: c.key === "name" ? "pointer" : "default", fontWeight: c.key === "name" ? 700 : 400, color: c.key === "name" ? C.accent : C.ink }}
-                      onClick={c.key === "name" ? () => openEdit(r) : undefined}>
-                      {c.type === "check"
-                        ? (r[c.key] ? <span style={{ color: C.green, fontWeight: 800 }}>✓</span> : <span style={{ color: C.border }}>–</span>)
-                        : (r[c.key] || <span style={{ color: C.border }}>–</span>)}
-                    </td>
+                  <td style={{ padding: "9px 6px", cursor: "pointer", fontWeight: 700, color: C.accent }} onClick={() => openEdit(r)}>{r.name}</td>
+                  {displayCols.map(c => (
+                    <td key={c.key} style={{ padding: "9px 6px" }}>{r[c.key] || <span style={{ color: C.border }}>–</span>}</td>
                   ))}
                   <td style={{ padding: "6px" }}>
-                    <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      {selectedRowId === r.id && <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>}
+                      <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1092,7 +1158,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  차수 관리 (간소화 — 새 차수 시작 + 현재 차수 선택만)
 // ════════════════════════════════════════════════════════════════════
-function RoundManager({ rounds, setRounds, orders, products, w }) {
+function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const mob = isMob(w);
   const thisYear = new Date().getFullYear();
   const [newYear, setNewYear] = useState(thisYear);
@@ -1105,6 +1171,11 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
   const [pickerTarget, setPickerTarget] = useState(null);
   const [pickerSelected, setPickerSelected] = useState([]);
   const [pickerSearch, setPickerSearch] = useState("");
+  // 🤖 팝업 안에서 바로 새 물품을 등록하기 위한 폼
+  const [newProdOpen, setNewProdOpen] = useState(false);
+  const [newProdName, setNewProdName] = useState("");
+  const [newProdCost, setNewProdCost] = useState("");
+  const [newProdPrice, setNewProdPrice] = useState("");
 
   const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
   const weekIndex = (wk) => weekOptions.indexOf(wk) + 1;
@@ -1118,6 +1189,7 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
     setPickerSelected(prevIds && prevIds.length > 0 ? prevIds : products.map(p => p.id));
     setPickerTarget(null);
     setPickerSearch("");
+    setNewProdOpen(false); setNewProdName(""); setNewProdCost(""); setNewProdPrice("");
     setPickerOpen(true);
   };
 
@@ -1125,12 +1197,24 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
     setPickerSelected(round.productIds && round.productIds.length > 0 ? round.productIds : products.map(p => p.id));
     setPickerTarget(round.id);
     setPickerSearch("");
+    setNewProdOpen(false); setNewProdName(""); setNewProdCost(""); setNewProdPrice("");
     setPickerOpen(true);
   };
 
   const togglePick = (id) => setPickerSelected(ps => ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id]);
   const pickAll = () => setPickerSelected(products.map(p => p.id));
   const pickNone = () => setPickerSelected([]);
+
+  // 🤖 팝업에서 바로 새 물품 추가 — 물품관리 전체 목록에도 저장되고, 이 차수에 자동으로 체크됨
+  const addNewProduct = () => {
+    if (!newProdName.trim()) return;
+    const np = { id: Date.now() + Math.random(), name: newProdName.trim(), cost: newProdCost, price: newProdPrice };
+    const u = [...products, np];
+    setProducts(u); saveSynced("order-products", u);
+    setPickerSelected(ps => [...ps, np.id]);
+    setNewProdName(""); setNewProdCost(""); setNewProdPrice(""); setNewProdOpen(false);
+  };
+  const newProdMargin = (Number(newProdPrice) || 0) - (Number(newProdCost) || 0);
 
   const confirmPicker = () => {
     if (pickerTarget === null) {
@@ -1213,6 +1297,28 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
               <input style={{ ...S.input, flex: 1 }} placeholder="물품 검색" value={pickerSearch} onChange={e => setPickerSearch(e.target.value)} />
               <button style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }} onClick={pickAll}>전체선택</button>
               <button style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }} onClick={pickNone}>전체해제</button>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              {!newProdOpen ? (
+                <button style={{ ...S.btnOutline, width: "100%", padding: "9px" }} onClick={() => setNewProdOpen(true)}>+ 목록에 없는 새 물품 추가</button>
+              ) : (
+                <div style={{ backgroundColor: C.accentLight, border: `1.5px dashed ${C.accent}`, borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: C.accent }}>새 물품 등록</div>
+                  <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1.4fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                    <input style={S.input} placeholder="물품명" value={newProdName} onChange={e => setNewProdName(e.target.value)} />
+                    <input style={S.input} type="number" placeholder="매입원가(입고가)" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} />
+                    <input style={S.input} type="number" placeholder="판매가" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: C.muted }}>마진(자동계산): <strong style={{ color: newProdMargin >= 0 ? C.green : C.red }}>{won(newProdMargin)}</strong></span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button style={{ ...S.btn(), padding: "7px 14px", fontSize: 12 }} onClick={addNewProduct} disabled={!newProdName.trim()}>추가</button>
+                      <button style={{ ...S.btnGhost, padding: "7px 14px", fontSize: 12 }} onClick={() => setNewProdOpen(false)}>취소</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>{pickerSelected.length}개 선택됨 (전체 {products.length}개)</div>
@@ -1303,7 +1409,7 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
                   <span style={{ fontSize: 12, color: C.muted }}>· 판매물품 {productCountOf(r)}개</span>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
-                  <button style={S.btnOutline} onClick={() => openEditPicker(r)}>📦 판매물품 설정</button>
+                  {clickedId === r.id && <button style={S.btnOutline} onClick={() => openEditPicker(r)}>📦 판매물품 설정</button>}
                   {r.active ? (
                     <button disabled style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12, opacity: 0.6, cursor: "default" }}>✓ 선택됨</button>
                   ) : clickedId === r.id ? (
@@ -1376,7 +1482,7 @@ export default function App() {
     { id: "entry", label: "주문 입력", icon: "🛒" },
     { id: "orders", label: "주문 리스트", icon: "📋" },
     { id: "products", label: "물품 관리", icon: "📦" },
-    { id: "members", label: "회원 교적관리", icon: "📇" },
+    { id: "members", label: "회원 명단", icon: "📇" },
   ];
   const goTo = (id) => { setPage(id); setMenuOpen(false); };
 
@@ -1384,9 +1490,9 @@ export default function App() {
     switch (page) {
       case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} currentRound={currentRound} w={w} />;
       case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} currentRound={currentRound} w={w} />;
-      case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} w={w} />;
+      case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} setProducts={setProducts} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} w={w} />;
-      case "members": return <MemberRegistry members={members} setMembers={setMembers} w={w} />;
+      case "members": return <MemberRegistry members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} />;
       default: return null;
     }
   };
