@@ -69,6 +69,14 @@ function ProductManager({ products, setProducts, w }) {
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
 
+  // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
+  const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", cost: "", price: "" });
+  const [rows, setRows] = useState([blankRow()]);
+  const setRow = (rowId, f, v) => setRows(rows.map(r => r.rowId === rowId ? { ...r, [f]: v } : r));
+  const addRow = () => setRows([...rows, blankRow()]);
+  const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
+  const rowMargin = (r) => (Number(r.price) || 0) - (Number(r.cost) || 0);
+
   const margin = (Number(form.price) || 0) - (Number(form.cost) || 0);
 
   const saveItem = () => {
@@ -83,6 +91,16 @@ function ProductManager({ products, setProducts, w }) {
     setProducts(u); save("order-products", u);
     setForm(blank); setAdding(false);
   };
+
+  const saveBulk = () => {
+    const valid = rows.filter(r => r.name.trim());
+    if (valid.length === 0) return;
+    const newItems = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), cost: r.cost, price: r.price }));
+    const u = [...products, ...newItems];
+    setProducts(u); save("order-products", u);
+    setRows([blankRow()]); setAdding(false);
+  };
+
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); save("order-products", u); };
 
@@ -91,24 +109,59 @@ function ProductManager({ products, setProducts, w }) {
   return (
     <div>
       <Title eyebrow="Products" title="물품 관리" sub={`등록된 물품 ${products.length}개`} w={w}
-        action={<button style={S.btn()} onClick={() => { setForm(blank); setEditing(null); setAdding(!adding); }}>+ 물품 추가</button>} />
+        action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 물품 추가</button>} />
 
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-          <div style={{ fontWeight: 800, marginBottom: 14 }}>{editing ? "물품 수정" : "새 물품 등록"}</div>
-          <Grid cols={3} w={w}>
-            <Field label="품명 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="감귤 5kg" /></Field>
-            <Field label="매입원가(입고가)"><input style={S.input} type="number" value={form.cost} onChange={e => setF("cost", e.target.value)} placeholder="20000" /></Field>
-            <Field label="판매가"><input style={S.input} type="number" value={form.price} onChange={e => setF("price", e.target.value)} placeholder="23000" /></Field>
-          </Grid>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <span style={{ fontSize: 13, color: C.muted }}>예상 마진</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? C.green : C.red }}>{won(margin)}</span>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button style={S.btn()} onClick={saveItem}>{editing ? "수정 저장" : "저장"}</button>
-            <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); }}>취소</button>
-          </div>
+          {editing ? (
+            <>
+              <div style={{ fontWeight: 800, marginBottom: 14 }}>물품 수정</div>
+              <Grid cols={3} w={w}>
+                <Field label="품명 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="감귤 5kg" /></Field>
+                <Field label="매입원가(입고가)"><input style={S.input} type="number" value={form.cost} onChange={e => setF("cost", e.target.value)} placeholder="20000" /></Field>
+                <Field label="판매가"><input style={S.input} type="number" value={form.price} onChange={e => setF("price", e.target.value)} placeholder="23000" /></Field>
+              </Grid>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <span style={{ fontSize: 13, color: C.muted }}>예상 마진</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? C.green : C.red }}>{won(margin)}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn()} onClick={saveItem}>수정 저장</button>
+                <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); }}>취소</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 800, marginBottom: 4 }}>새 물품 등록</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 물품을 한 번에 입력하고 저장할 수 있어요</div>
+              {rows.map((r, i) => (
+                <div key={r.rowId} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
+                  <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>품명 *</label>}
+                    <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="감귤 5kg" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>매입원가</label>}
+                    <input style={S.input} type="number" value={r.cost} onChange={e => setRow(r.rowId, "cost", e.target.value)} placeholder="20000" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>판매가</label>}
+                    <input style={S.input} type="number" value={r.price} onChange={e => setRow(r.rowId, "price", e.target.value)} placeholder="23000" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 1, minWidth: mob ? "auto" : 0, textAlign: "right" }}>
+                    {i === 0 && <label style={S.label}>마진</label>}
+                    <div style={{ padding: "9px 4px", fontSize: 13, fontWeight: 700, color: rowMargin(r) >= 0 ? C.green : C.red }}>{won(rowMargin(r))}</div>
+                  </div>
+                  <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
+                </div>
+              ))}
+              <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn()} onClick={saveBulk}>전체 저장</button>
+                <button style={S.btnGhost} onClick={() => { setAdding(false); setRows([blankRow()]); }}>취소</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -162,6 +215,16 @@ function MemberManager({ members, setMembers, w }) {
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
 
+  // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
+  const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", phone: "", note: "" });
+  const [rows, setRows] = useState([blankRow()]);
+  const setRow = (rowId, f, v) => setRows(rows.map(r => r.rowId === rowId ? { ...r, [f]: v } : r));
+  const addRow = () => setRows([...rows, blankRow()]);
+  const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
+
+  // 🤖 가나다순 자동 정렬
+  const sortByName = (list) => [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+
   const saveMember = () => {
     if (!form.name) return;
     let u;
@@ -171,30 +234,72 @@ function MemberManager({ members, setMembers, w }) {
     } else {
       u = [...members, { ...form, id: Date.now() }];
     }
+    u = sortByName(u);
     setMembers(u); save("order-members", u);
     setForm(blank); setAdding(false);
   };
+
+  const saveBulk = () => {
+    const valid = rows.filter(r => r.name.trim());
+    if (valid.length === 0) return;
+    const newMembers = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), phone: r.phone.trim(), note: r.note.trim() }));
+    const u = sortByName([...members, ...newMembers]);
+    setMembers(u); save("order-members", u);
+    setRows([blankRow()]); setAdding(false);
+  };
+
   const startEdit = (m) => { setForm({ name: m.name, phone: m.phone, note: m.note }); setEditing(m.id); setAdding(true); };
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
-  const filtered = members.filter(m => m.name.includes(search));
+  const filtered = sortByName(members.filter(m => m.name.includes(search)));
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 관리" sub={`등록된 회원 ${members.length}명 · 회원 카드를 클릭하면 수정할 수 있어요`} w={w}
-        action={<button style={S.btn()} onClick={() => { setForm(blank); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
+      <Title eyebrow="Members" title="회원 관리" sub={`등록된 회원 ${members.length}명 · 가나다순 정렬 · 회원 카드를 클릭하면 수정할 수 있어요`} w={w}
+        action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
 
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-          <div style={{ fontWeight: 800, marginBottom: 14 }}>{editing ? "회원 정보 수정" : "새 회원 등록"}</div>
-          <Grid cols={3} w={w}>
-            <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
-            <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
-            <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
-          </Grid>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button style={S.btn()} onClick={saveMember}>{editing ? "수정 저장" : "저장"}</button>
-            <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
-          </div>
+          {editing ? (
+            <>
+              <div style={{ fontWeight: 800, marginBottom: 14 }}>회원 정보 수정</div>
+              <Grid cols={3} w={w}>
+                <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
+                <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+                <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
+              </Grid>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn()} onClick={saveMember}>수정 저장</button>
+                <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 800, marginBottom: 4 }}>새 회원 등록</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 명을 한 번에 입력하고 저장할 수 있어요</div>
+              {rows.map((r, i) => (
+                <div key={r.rowId} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
+                  <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>이름 *</label>}
+                    <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="홍길동" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>연락처</label>}
+                    <input style={S.input} value={r.phone} onChange={e => setRow(r.rowId, "phone", e.target.value)} placeholder="010-0000-0000" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>메모</label>}
+                    <input style={S.input} value={r.note} onChange={e => setRow(r.rowId, "note", e.target.value)} placeholder="구역, 직분 등" />
+                  </div>
+                  <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
+                </div>
+              ))}
+              <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn()} onClick={saveBulk}>전체 저장</button>
+                <button style={S.btnGhost} onClick={() => { setAdding(false); setRows([blankRow()]); }}>취소</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
