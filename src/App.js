@@ -1085,7 +1085,23 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
     setOrders(u); saveSynced("order-orders", u);
   };
 
-  const roundOptions = [{ value: "전체", label: "전체 차수" }, ...rounds.map(r => ({ value: r.name, label: r.name + (r.active ? " (진행 중)" : "") }))];
+  // 🤖 차수 정렬키(최신 차수가 위로 오도록) — sortKey 없으면 이름에서 복구
+  const weekOptionsForSort = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+  const roundSortKeyDirect = (r) => {
+    if (!r) return -1;
+    if (r.sortKey) return r.sortKey;
+    const match = (r.name || "").match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(.+)/);
+    if (match) {
+      const wi = weekOptionsForSort.indexOf(match[3].trim()) + 1;
+      return Number(match[1]) * 10000 + Number(match[2]) * 100 + wi;
+    }
+    return 0;
+  };
+
+  const roundOptions = [
+    { value: "전체", label: "전체 차수" },
+    ...rounds.slice().sort((a, b) => roundSortKeyDirect(b) - roundSortKeyDirect(a)).map(r => ({ value: r.name, label: r.name + (r.active ? " (진행 중)" : "") })),
+  ];
 
   const byRound = orders.filter(o => {
     if (roundFilter === "전체") return true;
@@ -1110,19 +1126,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 
   const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
 
-  // 🤖 차수 정렬키(최신 차수가 위로 오도록) — sortKey 없으면 이름에서 복구
-  const weekOptionsForSort = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
-  const roundSortKey = (roundId) => {
-    const r = rounds.find(rr => rr.id === roundId);
-    if (!r) return -1; // 차수 미지정은 맨 아래로
-    if (r.sortKey) return r.sortKey;
-    const match = (r.name || "").match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(.+)/);
-    if (match) {
-      const wi = weekOptionsForSort.indexOf(match[3].trim()) + 1;
-      return Number(match[1]) * 10000 + Number(match[2]) * 100 + wi;
-    }
-    return 0;
-  };
+  const roundSortKey = (roundId) => roundSortKeyDirect(rounds.find(rr => rr.id === roundId));
 
   // 🤖 "전체 차수"로 볼 때는 차수별로 묶어서 표시 — 그룹 내부는 선택한 정렬 기준 유지, 그룹 순서는 최신 차수가 위
   const groupedByRound = roundFilter === "전체" ? (() => {
