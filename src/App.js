@@ -848,6 +848,7 @@ function OrderList({ orders, setOrders, rounds, w }) {
   const mob = isMob(w);
   const [filter, setFilter] = useState("전체");
   const [roundFilter, setRoundFilter] = useState("전체");
+  const [sortMode, setSortMode] = useState("dateLatest"); // dateLatest | dateOldest | priceHigh | priceLow
   const [expanded, setExpanded] = useState(null);
 
   const togglePaid = (id) => {
@@ -866,10 +867,24 @@ function OrderList({ orders, setOrders, rounds, w }) {
     const r = rounds.find(rr => rr.name === roundFilter);
     return r && o.roundId === r.id;
   });
-  const filtered = byRound.filter(o => filter === "전체" ? true : filter === "입금완료" ? o.paid : !o.paid);
+  const byStatus = byRound.filter(o => filter === "전체" ? true : filter === "입금완료" ? o.paid : !o.paid);
+  const sortList = (list) => {
+    if (sortMode === "dateOldest") return [...list].sort((a, b) => a.date.localeCompare(b.date));
+    if (sortMode === "priceHigh") return [...list].sort((a, b) => b.totalPrice - a.totalPrice);
+    if (sortMode === "priceLow") return [...list].sort((a, b) => a.totalPrice - b.totalPrice);
+    return [...list].sort((a, b) => b.date.localeCompare(a.date)); // dateLatest 기본
+  };
+  const filtered = sortList(byStatus);
   const totalPrice = byRound.reduce((s, o) => s + o.totalPrice, 0);
   const totalPaid = byRound.reduce((s, o) => s + (o.paidAmount || 0), 0);
   const totalUnpaid = totalPrice - totalPaid;
+
+  const sortOptions = [
+    { id: "dateLatest", label: "최신 주문순" },
+    { id: "dateOldest", label: "오래된 주문순" },
+    { id: "priceHigh", label: "금액 높은순" },
+    { id: "priceLow", label: "금액 낮은순" },
+  ];
 
   const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
 
@@ -897,9 +912,15 @@ function OrderList({ orders, setOrders, rounds, w }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
         {["전체","입금완료","미입금"].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: filter === f ? C.accent : C.bg, color: filter === f ? "#fff" : C.muted, fontFamily: "inherit" }}>{f}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {sortOptions.map(s => (
+          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.navy : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
         ))}
       </div>
 
@@ -973,6 +994,7 @@ function ReportPage({ orders, rounds, w }) {
   const mob = isMob(w);
   const [tab, setTab] = useState("product");
   const [roundFilter, setRoundFilter] = useState("전체");
+  const [sortMode, setSortMode] = useState("priceHigh"); // priceHigh | priceLow | qtyHigh | qtyLow | nameAsc
 
   const roundOptions = ["전체", ...rounds.map(r => r.name)];
   const scoped = orders.filter(o => {
@@ -980,6 +1002,14 @@ function ReportPage({ orders, rounds, w }) {
     const r = rounds.find(rr => rr.name === roundFilter);
     return r && o.roundId === r.id;
   });
+
+  const sortAgg = (list) => {
+    if (sortMode === "priceLow") return [...list].sort((a, b) => a.price - b.price);
+    if (sortMode === "qtyHigh") return [...list].sort((a, b) => b.qty - a.qty);
+    if (sortMode === "qtyLow") return [...list].sort((a, b) => a.qty - b.qty);
+    if (sortMode === "nameAsc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return [...list].sort((a, b) => b.price - a.price); // priceHigh 기본
+  };
 
   const productAgg = {};
   scoped.forEach(o => o.items.forEach(it => {
@@ -989,7 +1019,7 @@ function ReportPage({ orders, rounds, w }) {
     productAgg[it.name].price += it.price * it.qty;
     productAgg[it.name].margin += (it.price - it.cost) * it.qty;
   }));
-  const productList = Object.values(productAgg).sort((a, b) => b.price - a.price);
+  const productList = sortAgg(Object.values(productAgg));
 
   const memberAgg = {};
   scoped.forEach(o => {
@@ -1000,7 +1030,15 @@ function ReportPage({ orders, rounds, w }) {
     memberAgg[o.memberName].margin += o.totalMargin;
     memberAgg[o.memberName].paid += o.paidAmount || 0;
   });
-  const memberList = Object.values(memberAgg).sort((a, b) => b.price - a.price);
+  const memberList = sortAgg(Object.values(memberAgg));
+
+  const sortOptions = [
+    { id: "priceHigh", label: "금액 높은순" },
+    { id: "priceLow", label: "금액 낮은순" },
+    { id: "qtyHigh", label: "수량 많은순" },
+    { id: "qtyLow", label: "수량 적은순" },
+    { id: "nameAsc", label: "가나다순" },
+  ];
 
   const grandTotal = {
     qty: scoped.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0),
@@ -1048,9 +1086,15 @@ function ReportPage({ orders, rounds, w }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         {[{ id: "product", label: "📦 물품별" }, { id: "member", label: "👤 인원별" }].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", backgroundColor: tab === t.id ? C.accent : C.bg, color: tab === t.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{t.label}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {sortOptions.map(s => (
+          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.navy : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
         ))}
       </div>
 
@@ -1370,8 +1414,8 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
 export default function App() {
   const w = useWidth();
   const mob = isMob(w);
-  const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
-  const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
+  const [page, setPageRaw] = useState("entry"); // 🤖 항상 주문 입력 탭으로 시작
+  const setPage = (id) => setPageRaw(id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
@@ -1417,10 +1461,10 @@ export default function App() {
   const currentRound = rounds.find(r => r.active) || null;
 
   const nav = [
+    { id: "rounds", label: "차수 관리", icon: "🗓" },
     { id: "entry", label: "주문 입력", icon: "🛒" },
     { id: "orders", label: "주문 리스트", icon: "📋" },
     { id: "report", label: "보고서", icon: "📊" },
-    { id: "rounds", label: "차수 관리", icon: "🗓" },
     { id: "products", label: "물품 관리", icon: "📦" },
     { id: "members", label: "회원 관리", icon: "👤" },
   ];
