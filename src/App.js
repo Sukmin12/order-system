@@ -44,7 +44,7 @@ const SHEET_MAP = {
 const saveSynced = (key, value) => {
   save(key, value); // 로컬에는 즉시 저장 (오프라인에서도 끊김 없이 동작)
   const sheetName = SHEET_MAP[key];
-  if (!sheetName || SHEET_API_URL.includes("여기에")) return;
+  if (!sheetName || SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return;
   fetch(SHEET_API_URL, {
     method: "POST",
     mode: "no-cors",
@@ -55,7 +55,7 @@ const saveSynced = (key, value) => {
 
 // 🤖 구글시트에서 전체 데이터 불러오기
 const fetchAllFromSheet = async () => {
-  if (SHEET_API_URL.includes("여기에")) return null;
+  if (SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return null;
   try {
     const res = await fetch(SHEET_API_URL);
     const json = await res.json();
@@ -1277,15 +1277,28 @@ export default function App() {
   const [orders, setOrders] = useState(() => load("order-orders", []));
   const [rounds, setRounds] = useState(() => load("order-rounds", []));
   const [syncStatus, setSyncStatus] = useState(SHEET_API_URL.includes("여기에") ? "off" : "loading"); // off | loading | synced | error
+  const [showUploadPrompt, setShowUploadPrompt] = useState(false);
 
   // 🤖 앱이 열릴 때 구글 시트에서 최신 데이터를 불러와서 화면에 반영
+  // 단, 시트가 완전히 비어있고 내 PC에는 기존 데이터가 있으면 — 절대 자동으로 덮어쓰지 않고 먼저 물어봄
   useEffect(() => {
-    if (SHEET_API_URL.includes("여기에")) return;
+    if (SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return;
     let cancelled = false;
     (async () => {
       const data = await fetchAllFromSheet();
       if (cancelled) return;
       if (!data) { setSyncStatus("error"); return; }
+
+      const sheetIsEmpty = (data.members || []).length === 0 && (data.products || []).length === 0 && (data.orders || []).length === 0;
+      const localHasData = (load("order-members", []).length > 0) || (load("order-products", []).length > 0) || (load("order-orders", []).length > 0);
+
+      if (sheetIsEmpty && localHasData) {
+        // 시트는 비어있는데 내 PC엔 기존 데이터가 있음 → 자동 덮어쓰기 절대 금지, 사용자에게 먼저 묻기
+        setShowUploadPrompt(true);
+        setSyncStatus("error");
+        return;
+      }
+
       if (data.members) { setMembers(data.members); save("order-members", data.members); }
       if (data.products) { setProducts(data.products); save("order-products", data.products); }
       if (data.rounds) { setRounds(data.rounds); save("order-rounds", data.rounds); }
@@ -1294,6 +1307,17 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // 🤖 내 PC(이 브라우저)에 저장된 기존 데이터를 구글 시트로 한 번에 업로드
+  const uploadLocalToSheet = async () => {
+    setSyncStatus("loading");
+    saveSynced("order-members", members);
+    saveSynced("order-products", products);
+    saveSynced("order-rounds", rounds);
+    saveSynced("order-orders", orders);
+    setShowUploadPrompt(false);
+    setTimeout(() => setSyncStatus("synced"), 1200); // no-cors 특성상 응답 확인이 불가해 잠시 후 완료 처리
+  };
   const currentRound = rounds.find(r => r.active) || null;
 
   const nav = [
@@ -1320,6 +1344,21 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: C.bg, fontFamily: "'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif", color: C.ink }}>
+      {showUploadPrompt && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, backgroundColor: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ backgroundColor: C.surface, borderRadius: 16, padding: mob ? "28px 22px" : "36px 32px", maxWidth: 420, width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 14 }}>☁️</div>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>구글 시트가 비어있어요</div>
+            <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 24 }}>
+              이 기기에 저장된 기존 데이터가 있어요.<br />
+              <strong style={{ color: C.ink }}>회원 {members.length}명 · 물품 {products.length}개 · 주문 {orders.length}건</strong><br />
+              아래 버튼을 눌러 구글 시트로 업로드하면, 이후 어떤 기기에서 접속해도 같은 데이터를 보게 돼요.
+            </div>
+            <button style={{ ...S.btn(), width: "100%", padding: "13px", marginBottom: 10 }} onClick={uploadLocalToSheet}>📤 지금 데이터 업로드하기</button>
+            <button style={S.btnGhost} onClick={() => setShowUploadPrompt(false)}>나중에 하기</button>
+          </div>
+        </div>
+      )}
       {mob ? (
         <>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
