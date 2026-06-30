@@ -1085,6 +1085,20 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   });
   const memberList = sortAgg(Object.values(memberAgg));
 
+  // 🤖 물품별 → 구매한 사람 목록 / 인원별 → 구매한 물품 목록 (마우스오버용)
+  const [hoverProduct, setHoverProduct] = useState(null);
+  const [hoverMember, setHoverMember] = useState(null);
+  const productBuyers = {};
+  byRound.forEach(o => o.items.forEach(it => {
+    if (!productBuyers[it.name]) productBuyers[it.name] = {};
+    productBuyers[it.name][o.memberName] = (productBuyers[it.name][o.memberName] || 0) + it.qty;
+  }));
+  const memberItemsMap = {};
+  byRound.forEach(o => o.items.forEach(it => {
+    if (!memberItemsMap[o.memberName]) memberItemsMap[o.memberName] = {};
+    memberItemsMap[o.memberName][it.name] = (memberItemsMap[o.memberName][it.name] || 0) + it.qty;
+  }));
+
   const aggSortOptions = [
     { id: "priceHigh", label: "금액 높은순" },
     { id: "priceLow", label: "금액 낮은순" },
@@ -1149,75 +1163,91 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
             ))}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {filtered.length === 0
-              ? <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>주문 내역이 없습니다</div>
-              : filtered.map(o => (
-                <div key={o.id} style={S.card}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", cursor: "pointer", flexWrap: "wrap", gap: 8 }} onClick={() => setExpanded(expanded === o.id ? null : o.id)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{o.memberName}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); togglePaid(o.id); }}
-                        style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}
-                        title="클릭해서 입금 상태 전환"
-                      >
-                        {o.paid ? "✓ 입금완료" : "○ 미입금"}
-                      </button>
-                      <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{fmtDate(o.date)}</span>
-                      <span style={{ fontSize: 13, color: C.ink, fontWeight: 600, paddingLeft: 8, borderLeft: `2px solid ${C.border}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                        {o.items.map(i => `${i.name} ${i.qty}개`).join(", ")}
-                      </span>
-                      {roundFilter === "전체" && <span style={{ fontSize: 11, color: C.accent, flexShrink: 0 }}>· {roundName(o.roundId)}</span>}
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: C.accent }}>{won(o.totalPrice)}</div>
-                      <div style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>마진 {won(o.totalMargin)}</div>
-                      {!o.paid && o.paidAmount > 0 && <div style={{ fontSize: 11, color: C.red }}>미수 {won(o.totalPrice - o.paidAmount)}</div>}
-                    </div>
-                  </div>
+          <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 760 }}>
+              <thead>
+                <tr style={{ backgroundColor: C.bg }}>
+                  {["이름","입금상태","날짜","구매물품","판매가","마진",""].map(h => (
+                    <th key={h} style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0
+                  ? <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 내역이 없습니다</td></tr>
+                  : filtered.map((o, i) => {
+                    const isOpen = expanded === o.id;
+                    return (
+                      <React.Fragment key={o.id}>
+                        <tr onClick={() => setExpanded(isOpen ? null : o.id)} style={{ cursor: "pointer", backgroundColor: isOpen ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"), borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: isOpen ? C.accent : C.ink }}>{o.memberName}</td>
+                          <td style={{ padding: "11px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => togglePaid(o.id)}
+                              style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+                              title="클릭해서 입금 상태 전환"
+                            >
+                              {o.paid ? "✓ 입금완료" : "○ 미입금"}
+                            </button>
+                            {!o.paid && o.paidAmount > 0 && <div style={{ fontSize: 10, color: C.red, marginTop: 3 }}>미수 {won(o.totalPrice - o.paidAmount)}</div>}
+                          </td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", color: C.muted, fontSize: 12 }}>{fmtDate(o.date)}</td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", fontSize: 12.5, maxWidth: 240 }}>
+                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.items.map(it => `${it.name} ${it.qty}개`).join(", ")}</div>
+                            {roundFilter === "전체" && <div style={{ fontSize: 10.5, color: C.accent, marginTop: 2 }}>{roundName(o.roundId)}</div>}
+                          </td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.accent }}>{won(o.totalPrice)}</td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 700, color: C.green }}>{won(o.totalMargin)}</td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", color: C.muted, fontSize: 12 }}>{isOpen ? "▲" : "▼"}</td>
+                        </tr>
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={7} style={{ padding: 0, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg }}>
+                              <div style={{ padding: "16px 18px" }} onClick={e => e.stopPropagation()}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 14 }}>
+                                  <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                                  <tbody>
+                                    {o.items.map((it, ii) => (
+                                      <tr key={ii}>
+                                        <td style={{ padding: "6px 8px" }}>{it.name}</td>
+                                        <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                                          <input
+                                            type="number" min="1" value={it.qty}
+                                            onChange={e => updateItemQty(o.id, ii, e.target.value)}
+                                            style={{ ...S.input, width: 56, padding: "5px 6px", textAlign: "center", fontSize: 12, display: "inline-block" }}
+                                          />
+                                        </td>
+                                        <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{won(it.cost * it.qty)}</td>
+                                        <td style={{ padding: "6px 8px", textAlign: "right" }}>{won(it.price * it.qty)}</td>
+                                        <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won((it.price - it.cost) * it.qty)}</td>
+                                        <td style={{ padding: "6px 4px", textAlign: "right" }}>
+                                          <button style={{ ...S.btn(C.red), padding: "3px 7px", fontSize: 10 }} onClick={() => removeItemFromOrder(o.id, ii)}>×</button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
 
-                  {expanded === o.id && (
-                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 14 }}>
-                        <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {o.items.map((it, i) => (
-                            <tr key={i}>
-                              <td style={{ padding: "6px 8px" }}>{it.name}</td>
-                              <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                                <input
-                                  type="number" min="1" value={it.qty}
-                                  onChange={e => updateItemQty(o.id, i, e.target.value)}
-                                  style={{ ...S.input, width: 56, padding: "5px 6px", textAlign: "center", fontSize: 12, display: "inline-block" }}
-                                />
-                              </td>
-                              <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{won(it.cost * it.qty)}</td>
-                              <td style={{ padding: "6px 8px", textAlign: "right" }}>{won(it.price * it.qty)}</td>
-                              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won((it.price - it.cost) * it.qty)}</td>
-                              <td style={{ padding: "6px 4px", textAlign: "right" }}>
-                                <button style={{ ...S.btn(C.red), padding: "3px 7px", fontSize: 10 }} onClick={() => removeItemFromOrder(o.id, i)}>×</button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                          <input type="checkbox" checked={o.paid} onChange={() => togglePaid(o.id)} style={{ width: 16, height: 16 }} />
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>입금 완료</span>
-                        </label>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 12, color: C.muted }}>입금액</span>
-                          <input type="number" value={o.paidAmount || 0} onChange={e => updatePaidAmount(o.id, e.target.value)} style={{ ...S.input, width: 110, padding: "5px 8px" }} />
-                        </div>
-                        <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={() => remove(o.id)}>주문 삭제</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                                    <input type="checkbox" checked={o.paid} onChange={() => togglePaid(o.id)} style={{ width: 16, height: 16 }} />
+                                    <span style={{ fontSize: 13, fontWeight: 600 }}>입금 완료</span>
+                                  </label>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontSize: 12, color: C.muted }}>입금액</span>
+                                    <input type="number" value={o.paidAmount || 0} onChange={e => updatePaidAmount(o.id, e.target.value)} style={{ ...S.input, width: 110, padding: "5px 8px" }} />
+                                  </div>
+                                  <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={() => remove(o.id)}>주문 삭제</button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+              </tbody>
+            </table>
           </div>
         </>
       ) : (
@@ -1250,7 +1280,21 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                     ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
                     : productList.map(p => (
                       <tr key={p.name} style={{ borderBottom: `1px solid ${C.border}` }}>
-                        <td style={{ padding: "11px 14px", fontWeight: 700 }}>{p.name}</td>
+                        <td
+                          style={{ padding: "11px 14px", fontWeight: 700, position: "relative", cursor: "default" }}
+                          onMouseEnter={() => setHoverProduct(p.name)}
+                          onMouseLeave={() => setHoverProduct(null)}
+                        >
+                          {p.name}
+                          {hoverProduct === p.name && productBuyers[p.name] && (
+                            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 80, marginTop: 4, backgroundColor: C.navy, color: "#fff", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", boxShadow: "0 8px 20px rgba(15,46,79,0.3)" }}>
+                              <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 11, opacity: 0.85 }}>구매자</div>
+                              {Object.entries(productBuyers[p.name]).sort((a, b) => b[1] - a[1]).map(([name, qty]) => (
+                                <div key={name}>{name} <span style={{ opacity: 0.75 }}>{qty}개</span></div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: "11px 14px", textAlign: "right" }}>{p.qty}개</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: C.muted }}>{won(p.cost)}</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(p.price)}</td>
@@ -1287,7 +1331,21 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                       const unpaid = m.price - m.paid;
                       return (
                         <tr key={m.name} style={{ borderBottom: `1px solid ${C.border}` }}>
-                          <td style={{ padding: "11px 14px", fontWeight: 700 }}>{m.name}</td>
+                          <td
+                            style={{ padding: "11px 14px", fontWeight: 700, position: "relative", cursor: "default" }}
+                            onMouseEnter={() => setHoverMember(m.name)}
+                            onMouseLeave={() => setHoverMember(null)}
+                          >
+                            {m.name}
+                            {hoverMember === m.name && memberItemsMap[m.name] && (
+                              <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 80, marginTop: 4, backgroundColor: C.navy, color: "#fff", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", boxShadow: "0 8px 20px rgba(15,46,79,0.3)" }}>
+                                <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 11, opacity: 0.85 }}>구매물품</div>
+                                {Object.entries(memberItemsMap[m.name]).sort((a, b) => b[1] - a[1]).map(([name, qty]) => (
+                                  <div key={name}>{name} <span style={{ opacity: 0.75 }}>{qty}개</span></div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           <td style={{ padding: "11px 14px", textAlign: "right" }}>{m.qty}개</td>
                           <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(m.price)}</td>
                           <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(m.paid)}</td>
@@ -1413,8 +1471,13 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const [clickedId, setClickedId] = useState(null); // 🤖 카드를 클릭해서 선택한 상태(테두리 강조 + 선택 버튼 노출용)
   const sortKeyOf = (r) => r.sortKey !== undefined ? r.sortKey : 0;
 
+  // 🤖 "최신순" = 새로 추가한 순서가 아니라, 오늘 날짜에서 가장 가까운 주차(과거든 미래든)가 먼저 보이도록
+  const today = new Date();
+  const todayWeekNo = Math.min(5, Math.ceil(today.getDate() / 7));
+  const todaySortKey = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + todayWeekNo;
+
   const displayedRounds =
-    dateFilter === "latest" ? rounds.slice().sort((a, b) => sortKeyOf(b) - sortKeyOf(a)) :
+    dateFilter === "latest" ? rounds.slice().sort((a, b) => Math.abs(sortKeyOf(a) - todaySortKey) - Math.abs(sortKeyOf(b) - todaySortKey)) :
     dateFilter === "oldest" ? rounds.slice().sort((a, b) => sortKeyOf(a) - sortKeyOf(b)) :
     rounds.slice().reverse();
 
