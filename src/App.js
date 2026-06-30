@@ -391,24 +391,30 @@ function MemberRegistry({ members, setMembers, w }) {
 
   useEffect(() => { setRows(members); }, [members]);
 
+  // 🤖 표 컬럼 (번호 제외, 요청하신 순서 그대로)
   const cols = [
+    { key: "birthYear1", label: "출생년도", w: 80 },
+    { key: "visit", label: "심방여부", w: 70, type: "check" },
+    { key: "group1", label: "회원구분1", w: 90 },
+    { key: "group2", label: "회원구분2", w: 90 },
     { key: "name", label: "이름", w: 90 },
-    { key: "birth", label: "생년월일", w: 110 },
-    { key: "lunar", label: "음력", w: 50, type: "check" },
-    { key: "spouse", label: "배우자(남편)", w: 100 },
-    { key: "dept", label: "봉사부서", w: 110 },
-    { key: "child1", label: "자녀1", w: 80 },
-    { key: "child2", label: "자녀2", w: 80 },
-    { key: "child3", label: "자녀3", w: 80 },
-    { key: "child4", label: "자녀4", w: 80 },
-    { key: "gender", label: "성별", w: 64, type: "select", options: ["남", "여"] },
-    { key: "baptized", label: "세례", w: 50, type: "check" },
+    { key: "phone", label: "연락처", w: 120 },
+    { key: "address", label: "주소", w: 160 },
+    { key: "birthYear2", label: "출생년도", w: 80 },
+    { key: "birthMonth", label: "월", w: 50 },
+    { key: "birthDay", label: "일", w: 50 },
+    { key: "husband", label: "남편", w: 90 },
+    { key: "childBirth", label: "자녀(출생년도)", w: 120 },
+    { key: "note", label: "비고", w: 120 },
+    { key: "childbirth", label: "출산", w: 80 },
+    { key: "celebrate", label: "축하내용", w: 140 },
   ];
 
-  const blankRow = () => ({
-    id: Date.now() + Math.random(), name: "", birth: "", lunar: false, spouse: "", dept: "",
-    child1: "", child2: "", child3: "", child4: "", gender: "", baptized: false,
-  });
+  const blankRow = () => {
+    const r = { id: Date.now() + Math.random() };
+    cols.forEach(c => { r[c.key] = c.type === "check" ? false : ""; });
+    return r;
+  };
 
   const commit = (u) => { setRows(u); setMembers(u); saveSynced("order-members", u); };
 
@@ -435,21 +441,21 @@ function MemberRegistry({ members, setMembers, w }) {
     closeEdit();
   };
 
+  // 🤖 엑셀 붙여넣기 — 표 컬럼 순서와 동일하게 매칭
   const handlePaste = (e) => {
     const text = e.clipboardData.getData("text");
     if (!text || !text.includes("\t")) return;
     e.preventDefault();
     const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
-    const yes = (v) => { const t = (v || "").trim(); return t === "O" || t === "o" || t === "음" || t === "세례"; };
+    const yes = (v) => { const t = (v || "").trim(); return t === "O" || t === "o" || t === "예"; };
     const parsed = lines.map(line => {
       const c = line.split("\t");
-      return {
-        id: Date.now() + Math.random(),
-        name: (c[0] || "").trim(), birth: (c[1] || "").trim(), lunar: yes(c[2]),
-        spouse: (c[3] || "").trim(), dept: (c[4] || "").trim(),
-        child1: (c[5] || "").trim(), child2: (c[6] || "").trim(), child3: (c[7] || "").trim(), child4: (c[8] || "").trim(),
-        gender: (c[9] || "").trim(), baptized: yes(c[10]),
-      };
+      const r = { id: Date.now() + Math.random() };
+      cols.forEach((col, i) => {
+        const raw = (c[i] || "").trim();
+        r[col.key] = col.type === "check" ? yes(raw) : raw;
+      });
+      return r;
     }).filter(r => r.name && r.name !== "이름");
     if (parsed.length === 0) return;
     commit([...rows, ...parsed]);
@@ -484,7 +490,7 @@ function MemberRegistry({ members, setMembers, w }) {
 
   return (
     <div>
-      <Title eyebrow="Registry" title="회원 교적관리" sub="표에서 회원을 클릭하면 세부 정보를 입력/수정할 수 있어요" w={w}
+      <Title eyebrow="Registry" title="회원 교적관리" sub="표에서 이름을 클릭하면 팝업으로 세부 정보를 입력/수정할 수 있어요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
@@ -500,77 +506,81 @@ function MemberRegistry({ members, setMembers, w }) {
         </div>
       </div>
 
+      {/* 🤖 팝업(모달) 수정 화면 */}
       {form && (
-        <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>{form.name || "새 회원"} 정보</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={goPrev} disabled={editIndex <= 0} title="이전 회원"
-                style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: editIndex <= 0 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: editIndex <= 0 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
-              <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{editIndex + 1} / {filtered.length}</span>
-              <button onClick={goNext} disabled={editIndex < 0 || editIndex >= filtered.length - 1} title="다음 회원"
-                style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: (editIndex < 0 || editIndex >= filtered.length - 1) ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: (editIndex < 0 || editIndex >= filtered.length - 1) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
-              <button onClick={closeEdit} style={{ border: "none", backgroundColor: C.surface, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, backgroundColor: "rgba(15,46,79,0.45)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center", padding: mob ? 0 : 20 }} onClick={closeEdit}>
+          <div
+            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "28px 30px", maxWidth: 640, width: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>{form.name || "새 회원"} 정보</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={goPrev} disabled={editIndex <= 0} title="이전 회원"
+                  style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: editIndex <= 0 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: editIndex <= 0 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
+                <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{editIndex + 1} / {filtered.length}</span>
+                <button onClick={goNext} disabled={editIndex < 0 || editIndex >= filtered.length - 1} title="다음 회원"
+                  style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: (editIndex < 0 || editIndex >= filtered.length - 1) ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: (editIndex < 0 || editIndex >= filtered.length - 1) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
+                <button onClick={closeEdit} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
             </div>
-          </div>
 
-          <Grid cols={3} w={w}>
-            <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
-            <Field label="생년월일"><input style={S.input} value={form.birth} onChange={e => setF("birth", e.target.value)} placeholder="1990.01.01" /></Field>
-            <Field label="음력 생일 여부">
-              <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer" }}>
-                <input type="checkbox" checked={!!form.lunar} onChange={e => setF("lunar", e.target.checked)} style={{ width: 17, height: 17, cursor: "pointer" }} />
-                <span style={{ fontSize: 13 }}>음력 생일</span>
-              </label>
-            </Field>
-          </Grid>
-          <Grid cols={3} w={w}>
-            <Field label="배우자(남편) 이름"><input style={S.input} value={form.spouse} onChange={e => setF("spouse", e.target.value)} placeholder="배우자 이름" /></Field>
-            <Field label="봉사부서"><input style={S.input} value={form.dept} onChange={e => setF("dept", e.target.value)} placeholder="예: 찬양팀" /></Field>
-            <Field label="성별">
-              <select style={S.select} value={form.gender || ""} onChange={e => setF("gender", e.target.value)}>
-                <option value=""></option>
-                <option value="남">남</option>
-                <option value="여">여</option>
-              </select>
-            </Field>
-          </Grid>
-          <Grid cols={4} w={w}>
-            <Field label="자녀1"><input style={S.input} value={form.child1} onChange={e => setF("child1", e.target.value)} /></Field>
-            <Field label="자녀2"><input style={S.input} value={form.child2} onChange={e => setF("child2", e.target.value)} /></Field>
-            <Field label="자녀3"><input style={S.input} value={form.child3} onChange={e => setF("child3", e.target.value)} /></Field>
-            <Field label="자녀4"><input style={S.input} value={form.child4} onChange={e => setF("child4", e.target.value)} /></Field>
-          </Grid>
-          <Field label="세례 여부">
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 16 }}>
-              <input type="checkbox" checked={!!form.baptized} onChange={e => setF("baptized", e.target.checked)} style={{ width: 17, height: 17, cursor: "pointer" }} />
-              <span style={{ fontSize: 13 }}>세례 받음</span>
-            </label>
-          </Field>
+            <Grid cols={3} w={w}>
+              <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
+              <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+              <Field label="심방여부">
+                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!form.visit} onChange={e => setF("visit", e.target.checked)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  <span style={{ fontSize: 13 }}>심방함</span>
+                </label>
+              </Field>
+            </Grid>
+            <Grid cols={3} w={w}>
+              <Field label="회원구분1"><input style={S.input} value={form.group1} onChange={e => setF("group1", e.target.value)} /></Field>
+              <Field label="회원구분2"><input style={S.input} value={form.group2} onChange={e => setF("group2", e.target.value)} /></Field>
+              <Field label="출생년도"><input style={S.input} value={form.birthYear1} onChange={e => setF("birthYear1", e.target.value)} placeholder="1990" /></Field>
+            </Grid>
+            <Field label="주소"><input style={{ ...S.input, marginBottom: 12 }} value={form.address} onChange={e => setF("address", e.target.value)} placeholder="주소" /></Field>
 
-          <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button style={S.btn()} onClick={saveEdit}>저장</button>
-              <button style={S.btnGhost} onClick={closeEdit}>닫기</button>
+            <Grid cols={3} w={w}>
+              <Field label="출생년도(2)"><input style={S.input} value={form.birthYear2} onChange={e => setF("birthYear2", e.target.value)} placeholder="1990" /></Field>
+              <Field label="월"><input style={S.input} value={form.birthMonth} onChange={e => setF("birthMonth", e.target.value)} placeholder="01" /></Field>
+              <Field label="일"><input style={S.input} value={form.birthDay} onChange={e => setF("birthDay", e.target.value)} placeholder="01" /></Field>
+            </Grid>
+            <Grid cols={2} w={w}>
+              <Field label="남편"><input style={S.input} value={form.husband} onChange={e => setF("husband", e.target.value)} placeholder="남편 이름" /></Field>
+              <Field label="자녀(출생년도)"><input style={S.input} value={form.childBirth} onChange={e => setF("childBirth", e.target.value)} placeholder="예: 2015, 2018" /></Field>
+            </Grid>
+            <Grid cols={3} w={w}>
+              <Field label="출산"><input style={S.input} value={form.childbirth} onChange={e => setF("childbirth", e.target.value)} /></Field>
+              <Field label="축하내용"><input style={S.input} value={form.celebrate} onChange={e => setF("celebrate", e.target.value)} placeholder="예: 결혼, 출산 등" /></Field>
+              <Field label="비고"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} /></Field>
+            </Grid>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn()} onClick={saveEdit}>저장</button>
+                <button style={S.btnGhost} onClick={closeEdit}>닫기</button>
+              </div>
+              <button style={{ ...S.btn(C.red), padding: "10px 16px" }} onClick={() => removeRow(editingId)}>회원 삭제</button>
             </div>
-            <button style={{ ...S.btn(C.red), padding: "10px 16px" }} onClick={() => removeRow(editingId)}>회원 삭제</button>
           </div>
         </div>
       )}
 
       <div style={{ marginBottom: 14 }}>
-        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (이름, 생년월일, 음력여부(O), 배우자, 봉사부서, 자녀1~4, 성별, 세례여부(O) 순서)</label>
-        <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
+        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (출생년도, 심방여부(O), 회원구분1, 회원구분2, 이름, 연락처, 주소, 출생년도, 월, 일, 남편, 자녀(출생년도), 비고, 출산, 축하내용 순서)</label>
+        <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 표 순서 그대로 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
       </div>
 
       <input style={{ ...S.input, marginBottom: 12, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
 
       <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 1060 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 1380 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
-              <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 36 }}>#</th>
-              {cols.map(c => <th key={c.key} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: c.w }}>{c.label}</th>)}
+              <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 36 }}>번호</th>
+              {cols.map((c, i) => <th key={c.key + i} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: c.w }}>{c.label}</th>)}
               <th style={{ padding: "9px 6px", borderBottom: `1px solid ${C.border}`, minWidth: 40 }}></th>
             </tr>
           </thead>
@@ -578,16 +588,17 @@ function MemberRegistry({ members, setMembers, w }) {
             {filtered.length === 0
               ? <tr><td colSpan={cols.length + 2} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
               : filtered.map((r, i) => (
-                <tr key={r.id} onClick={() => openEdit(r)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: editingId === r.id ? C.accentLight : "transparent" }}>
+                <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: editingId === r.id ? C.accentLight : "transparent" }}>
                   <td style={{ padding: "9px 6px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                  {cols.map(c => (
-                    <td key={c.key} style={{ padding: "9px 6px" }}>
+                  {cols.map((c, ci) => (
+                    <td key={c.key + ci} style={{ padding: "9px 6px", cursor: c.key === "name" ? "pointer" : "default", fontWeight: c.key === "name" ? 700 : 400, color: c.key === "name" ? C.accent : C.ink }}
+                      onClick={c.key === "name" ? () => openEdit(r) : undefined}>
                       {c.type === "check"
                         ? (r[c.key] ? <span style={{ color: C.green, fontWeight: 800 }}>✓</span> : <span style={{ color: C.border }}>–</span>)
                         : (r[c.key] || <span style={{ color: C.border }}>–</span>)}
                     </td>
                   ))}
-                  <td style={{ padding: "6px" }} onClick={e => e.stopPropagation()}>
+                  <td style={{ padding: "6px" }}>
                     <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
                   </td>
                 </tr>
