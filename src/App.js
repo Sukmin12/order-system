@@ -621,7 +621,10 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const [cart, setCart] = useState([]);
 
   const memberOptions = members.map(m => ({ value: m.id, label: m.name }));
-  const productOptions = products.map(p => ({ value: p.id, label: `${p.name} — ${won(p.price)}` }));
+  const roundProducts = (currentRound?.productIds && currentRound.productIds.length > 0)
+    ? products.filter(p => currentRound.productIds.includes(p.id))
+    : products; // 🤖 차수에 판매물품이 지정 안 돼있으면(옛날 차수 등) 전체 물품 표시
+  const productOptions = roundProducts.map(p => ({ value: p.id, label: `${p.name} — ${won(p.price)}` }));
 
   const addItem = () => {
     if (!memberId || !pickProduct) return;
@@ -1066,25 +1069,63 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  차수 관리 (간소화 — 새 차수 시작 + 현재 차수 선택만)
 // ════════════════════════════════════════════════════════════════════
-function RoundManager({ rounds, setRounds, orders, w }) {
+function RoundManager({ rounds, setRounds, orders, products, w }) {
+  const mob = isMob(w);
   const thisYear = new Date().getFullYear();
   const [newYear, setNewYear] = useState(thisYear);
   const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
   const [newWeek, setNewWeek] = useState("첫째주");
   const [dateFilter, setDateFilter] = useState("latest"); // latest | oldest | manual
 
+  // 🤖 차수별 판매물품 선택 팝업 — pickerTarget: null=신규 차수 생성, roundId=기존 차수 물품 수정
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState(null);
+  const [pickerSelected, setPickerSelected] = useState([]);
+  const [pickerSearch, setPickerSearch] = useState("");
+
   const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
   const weekIndex = (wk) => weekOptions.indexOf(wk) + 1;
   const makeSortKey = (year, month, week) => year * 10000 + month * 100 + weekIndex(week);
+  const activeRound = rounds.find(r => r.active);
 
-  const startRound = () => {
-    const name = `${newYear}년 ${newMonth}월 ${newWeek}`;
-    const u = [...rounds.map(r => ({ ...r, active: false })), {
-      id: Date.now(), name, active: true, createdAt: todayStr(),
-      year: newYear, month: newMonth, week: newWeek,
-      sortKey: makeSortKey(newYear, newMonth, newWeek),
-    }];
-    setRounds(u); saveSynced("order-rounds", u);
+  // "새 차수 시작" 클릭 → 바로 만들지 않고 판매물품 선택 팝업부터 연다
+  const openCreatePicker = () => {
+    // 기본값: 직전 활성 차수가 팔던 물품을 그대로 가져옴(있으면). 없으면 전체 선택.
+    const prevIds = activeRound?.productIds;
+    setPickerSelected(prevIds && prevIds.length > 0 ? prevIds : products.map(p => p.id));
+    setPickerTarget(null);
+    setPickerSearch("");
+    setPickerOpen(true);
+  };
+
+  const openEditPicker = (round) => {
+    setPickerSelected(round.productIds && round.productIds.length > 0 ? round.productIds : products.map(p => p.id));
+    setPickerTarget(round.id);
+    setPickerSearch("");
+    setPickerOpen(true);
+  };
+
+  const togglePick = (id) => setPickerSelected(ps => ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id]);
+  const pickAll = () => setPickerSelected(products.map(p => p.id));
+  const pickNone = () => setPickerSelected([]);
+
+  const confirmPicker = () => {
+    if (pickerTarget === null) {
+      // 신규 차수 생성
+      const name = `${newYear}년 ${newMonth}월 ${newWeek}`;
+      const u = [...rounds.map(r => ({ ...r, active: false })), {
+        id: Date.now(), name, active: true, createdAt: todayStr(),
+        year: newYear, month: newMonth, week: newWeek,
+        sortKey: makeSortKey(newYear, newMonth, newWeek),
+        productIds: pickerSelected,
+      }];
+      setRounds(u); saveSynced("order-rounds", u);
+    } else {
+      // 기존 차수 판매물품 수정
+      const u = rounds.map(r => r.id === pickerTarget ? { ...r, productIds: pickerSelected } : r);
+      setRounds(u); saveSynced("order-rounds", u);
+    }
+    setPickerOpen(false);
   };
 
   const removeRound = (id) => {
@@ -1099,6 +1140,7 @@ function RoundManager({ rounds, setRounds, orders, w }) {
   };
 
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
+  const productCountOf = (round) => (round.productIds && round.productIds.length > 0) ? round.productIds.length : products.length;
 
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
@@ -1122,11 +1164,54 @@ function RoundManager({ rounds, setRounds, orders, w }) {
   };
   const handleDragEnd = () => { setDragIndex(null); setOverIndex(null); };
 
-  const activeRound = rounds.find(r => r.active);
+  const filteredPickerProducts = products.filter(p => p.name.includes(pickerSearch));
 
   return (
     <div>
       <Title eyebrow="Rounds" title="차수 관리" sub="연도/월/주차를 선택해서 새 차수를 만들고, 현재 진행할 차수만 선택하면 돼요" w={w} />
+
+      {/* 🤖 차수별 판매물품 선택 팝업 */}
+      {pickerOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, backgroundColor: "rgba(15,46,79,0.45)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center", padding: mob ? 0 : 20 }} onClick={() => setPickerOpen(false)}>
+          <div
+            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "26px 28px", maxWidth: 520, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>📦 이 차수에 판매할 물품 선택</div>
+              <button onClick={() => setPickerOpen(false)} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+              {pickerTarget === null ? `"${newYear}년 ${newMonth}월 ${newWeek}"에서 판매할 물품에 체크하세요` : "이 차수에서 판매할 물품을 체크하세요"} · 물품 관리에 등록된 전체 물품 중 골라서 사용해요
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+              <input style={{ ...S.input, flex: 1 }} placeholder="물품 검색" value={pickerSearch} onChange={e => setPickerSearch(e.target.value)} />
+              <button style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }} onClick={pickAll}>전체선택</button>
+              <button style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }} onClick={pickNone}>전체해제</button>
+            </div>
+
+            <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>{pickerSelected.length}개 선택됨 (전체 {products.length}개)</div>
+
+            <div style={{ flex: 1, overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 16 }}>
+              {filteredPickerProducts.length === 0
+                ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontSize: 13 }}>등록된 물품이 없습니다</div>
+                : filteredPickerProducts.map(p => (
+                  <label key={p.id} onClick={() => togglePick(p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: pickerSelected.includes(p.id) ? C.accentLight : "transparent" }}>
+                    <input type="checkbox" readOnly checked={pickerSelected.includes(p.id)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                    <span style={{ fontSize: 12, color: C.muted }}>{won(p.price)}</span>
+                  </label>
+                ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...S.btn(), flex: 1 }} onClick={confirmPicker}>{pickerTarget === null ? "이 물품으로 차수 시작" : "저장"}</button>
+              <button style={S.btnGhost} onClick={() => setPickerOpen(false)}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
@@ -1151,8 +1236,8 @@ function RoundManager({ rounds, setRounds, orders, w }) {
           </Field>
         </Grid>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={S.btn()} onClick={startRound}>새 차수 시작</button>
-          <span style={{ fontSize: 13, color: C.muted }}>→ "{newYear}년 {newMonth}월 {newWeek}"로 생성돼요</span>
+          <button style={S.btn()} onClick={openCreatePicker}>새 차수 시작</button>
+          <span style={{ fontSize: 13, color: C.muted }}>→ "{newYear}년 {newMonth}월 {newWeek}"로 생성돼요 (판매물품 먼저 선택)</span>
         </div>
       </div>
 
@@ -1183,9 +1268,15 @@ function RoundManager({ rounds, setRounds, orders, w }) {
                   <span style={{ fontWeight: 800, fontSize: 16 }}>{r.name}</span>
                   {r.active && <Badge text="진행 중" color={C.green} bg={C.greenLight} />}
                   <span style={{ fontSize: 12, color: C.muted }}>주문 {orderCountOf(r.id)}건</span>
+                  <span style={{ fontSize: 12, color: C.muted }}>· 판매물품 {productCountOf(r)}개</span>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {!r.active && <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => setActiveRound(r.id)}>이 차수로 선택</button>}
+                  <button style={S.btnOutline} onClick={() => openEditPicker(r)}>📦 판매물품 설정</button>
+                  {r.active ? (
+                    <button disabled style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12, opacity: 0.6, cursor: "default" }}>✓ 선택됨</button>
+                  ) : (
+                    <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => setActiveRound(r.id)}>이 차수로 선택</button>
+                  )}
                   <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>
                 </div>
               </div>
@@ -1261,7 +1352,7 @@ export default function App() {
     switch (page) {
       case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} currentRound={currentRound} w={w} />;
       case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} currentRound={currentRound} w={w} />;
-      case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} w={w} />;
+      case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} w={w} />;
       case "members": return <MemberRegistry members={members} setMembers={setMembers} w={w} />;
       default: return null;
