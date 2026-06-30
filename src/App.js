@@ -29,7 +29,6 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 const fmtDate = (d) => { if (!d) return "-"; const dt = new Date(d); return `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`; };
 
 // ── 구글 시트 동기화 ─────────────────────────────────────────────────
-// ⚠️ 여기에 본인의 Apps Script 웹앱 URL을 붙여넣으세요
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec";
 
 // localStorage 키 ↔ 구글시트 탭 이름 매핑
@@ -40,11 +39,11 @@ const SHEET_MAP = {
   "order-orders": "orders",
 };
 
-// 🤖 로컬 저장 + 구글시트 전송을 한 번에 처리 (기존 save 호출부는 그대로 두고 내부만 확장)
+// 🤖 로컬 저장 + 구글시트 전송을 한 번에 처리
 const saveSynced = (key, value) => {
   save(key, value); // 로컬에는 즉시 저장 (오프라인에서도 끊김 없이 동작)
   const sheetName = SHEET_MAP[key];
-  if (!sheetName || SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return;
+  if (!sheetName) return;
   fetch(SHEET_API_URL, {
     method: "POST",
     mode: "no-cors",
@@ -55,7 +54,6 @@ const saveSynced = (key, value) => {
 
 // 🤖 구글시트에서 전체 데이터 불러오기
 const fetchAllFromSheet = async () => {
-  if (SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return null;
   try {
     const res = await fetch(SHEET_API_URL);
     const json = await res.json();
@@ -120,9 +118,8 @@ function ProductManager({ products, setProducts, w }) {
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState("asc"); // asc | desc | priceHigh | priceLow
+  const [sortMode, setSortMode] = useState("asc");
 
-  // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", cost: "", price: "" });
   const [rows, setRows] = useState([blankRow()]);
   const setRow = (rowId, f, v) => setRows(rows.map(r => r.rowId === rowId ? { ...r, [f]: v } : r));
@@ -130,23 +127,21 @@ function ProductManager({ products, setProducts, w }) {
   const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
   const rowMargin = (r) => (Number(r.price) || 0) - (Number(r.cost) || 0);
 
-  // 🤖 엑셀에서 복사한 표를 붙여넣으면 자동으로 줄을 채워줌 (탭/줄바꿈 구분)
   const handlePaste = (e) => {
     const text = e.clipboardData.getData("text");
-    if (!text || !text.includes("\t")) return; // 일반 텍스트 붙여넣기는 그대로 두기
+    if (!text || !text.includes("\t")) return;
     e.preventDefault();
     const parsedRows = text.split(/\r?\n/).filter(line => line.trim() !== "").map(line => {
       const cols = line.split("\t");
       const clean = (v) => (v || "").replace(/[₩,\s]/g, "");
       return { rowId: Date.now() + Math.random(), name: (cols[0] || "").trim(), cost: clean(cols[1]), price: clean(cols[2]) };
-    }).filter(r => r.name && r.name !== "품명"); // 헤더 줄 자동 제외
+    }).filter(r => r.name && r.name !== "품명");
     if (parsedRows.length === 0) return;
     setRows(parsedRows);
   };
 
   const margin = (Number(form.price) || 0) - (Number(form.cost) || 0);
 
-  // 🤖 중복 이름 경고 — 이미 등록된 물품과 이름이 같으면 알려줌 (저장은 막지 않음)
   const findDuplicate = (name, excludeId) => {
     const n = name.trim();
     if (!n) return null;
@@ -199,7 +194,6 @@ function ProductManager({ products, setProducts, w }) {
       <Title eyebrow="Products" title="물품 관리" sub="표에서 수정/삭제 버튼으로 바로 관리할 수 있어요" w={w}
         action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 물품 추가</button>} />
 
-      {/* 🤖 물품 수 — 눈에 띄는 카드 */}
       <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.navy, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>📦</span>
         <div>
@@ -237,7 +231,6 @@ function ProductManager({ products, setProducts, w }) {
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 물품 등록</div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 물품을 한 번에 입력하고 저장할 수 있어요</div>
 
-              {/* 🤖 엑셀 붙여넣기 영역 */}
               <div style={{ marginBottom: 18 }}>
                 <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (품명, 매입원가, 판매가 순서)</label>
                 <textarea
@@ -289,7 +282,6 @@ function ProductManager({ products, setProducts, w }) {
 
       <input style={{ ...S.input, marginBottom: 12 }} placeholder="품명 검색" value={search} onChange={e => setSearch(e.target.value)} />
 
-      {/* 🤖 정렬 필터 */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {sortOptions.map(s => (
           <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
@@ -343,16 +335,14 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState("position"); // position | asc | desc
+  const [sortMode, setSortMode] = useState("position");
 
-  // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", phone: "", note: "" });
   const [rows, setRows] = useState([blankRow()]);
   const setRow = (rowId, f, v) => setRows(rows.map(r => r.rowId === rowId ? { ...r, [f]: v } : r));
   const addRow = () => setRows([...rows, blankRow()]);
   const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
 
-  // 🤖 엑셀에서 복사한 표를 붙여넣으면 자동으로 줄을 채워줌 (탭/줄바꿈 구분)
   const handlePaste = (e) => {
     const text = e.clipboardData.getData("text");
     if (!text || !text.includes("\t")) return;
@@ -365,14 +355,12 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     setRows(parsedRows);
   };
 
-  // 🤖 동명이인 경고 — 이미 등록된 이름과 같으면 알려줌 (저장은 막지 않음)
   const findDuplicateMember = (name, excludeId) => {
     const n = name.trim();
     if (!n) return null;
     return members.find(m => m.name.trim() === n && m.id !== excludeId) || null;
   };
 
-  // 🤖 직분 우선순위: 회장 → 총무 → 부장(○○부장) → 그 외 회원
   const positionRank = (note) => {
     const n = (note || "").trim();
     if (n === "회장" || n.includes("회장")) return 0;
@@ -385,7 +373,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const sortList = (list) => {
     if (sortMode === "asc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
-    // position: 직분 우선순위 먼저, 그 안에서는 가나다순
     return [...list].sort((a, b) => {
       const r = positionRank(a.note) - positionRank(b.note);
       if (r !== 0) return r;
@@ -393,7 +380,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     });
   };
 
-  // 🤖 저장만 수행 (폼은 닫지 않음) — 이전/다음 이동 시 자동저장에 사용
   const persistMember = (data) => {
     if (!data.name) return members;
     const cleaned = { ...data, note: data.note.trim() || "회원" };
@@ -430,7 +416,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); saveSynced("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
   const filtered = sortList(members.filter(m => m.name.includes(search)));
 
-  // 🤖 선택된 회원의 차수별 구매 이력 자동 집계
   const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
   const memberOrders = editing ? orders.filter(o => o.memberId === editing) : [];
   const historyByRound = [];
@@ -448,7 +433,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const memberTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
   const memberTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
 
-  // 🤖 현재 정렬된 목록 기준으로 이전/다음 회원 이동 — 이동 전 자동 저장
   const currentIndex = editing ? filtered.findIndex(m => m.id === editing) : -1;
   const goPrev = () => {
     if (currentIndex <= 0) return;
@@ -472,7 +456,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
       <Title eyebrow="Members" title="회원 관리" sub="회원 카드를 클릭하면 수정할 수 있어요" w={w}
         action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
 
-      {/* 🤖 회원 수 — 눈에 띄는 카드 */}
       <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.accent, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>👤</span>
         <div>
@@ -485,7 +468,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
           {editing ? (
             <div>
-              {/* 상단: 이전/다음 + 닫기 버튼 */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: 17 }}>{form.name} 정보</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -505,7 +487,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
                 </div>
               </div>
 
-              {/* 회원 정보 수정 */}
               <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: mob ? 16 : 20, border: `1px solid ${C.border}`, marginBottom: 16 }}>
                 <div style={{ fontWeight: 800, marginBottom: 14 }}>✏️ 회원 정보 수정</div>
                 <Grid cols={3} w={w}>
@@ -524,7 +505,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
                 </div>
               </div>
 
-              {/* 차수별 구매 이력 — 넓게, 카드형 */}
               <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: mob ? 16 : 20, border: `1px solid ${C.border}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
                   <div style={{ fontWeight: 800, fontSize: 15 }}>🛒 구매 이력</div>
@@ -554,7 +534,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 회원 등록</div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 명을 한 번에 입력하고 저장할 수 있어요</div>
 
-              {/* 🤖 엑셀 붙여넣기 영역 */}
               <div style={{ marginBottom: 18 }}>
                 <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (이름, 연락처, 메모 순서)</label>
                 <textarea
@@ -602,7 +581,6 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
 
       <input style={{ ...S.input, marginBottom: 12 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
 
-      {/* 🤖 정렬 필터 */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {sortOptions.map(s => (
           <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
@@ -643,9 +621,8 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const [memberId, setMemberId] = useState("");
   const [pickProduct, setPickProduct] = useState("");
   const [pickQty, setPickQty] = useState(1);
-  const [cart, setCart] = useState([]); // { cartId, memberId, memberName, productId, name, cost, price, qty }
+  const [cart, setCart] = useState([]);
 
-  // 🤖 물품 추가를 누르면 즉시 "선택된 회원" 아래로 바로 쌓임 (진짜 장바구니)
   const addItem = () => {
     if (!memberId || !pickProduct) return;
     const member = members.find(m => m.id === Number(memberId));
@@ -668,13 +645,11 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
       }]);
     }
     setPickProduct(""); setPickQty(1);
-    // 회원 선택은 유지 — 같은 사람이 물품을 연속으로 추가할 수 있도록
   };
 
   const removeCartItem = (cartId) => setCart(cart.filter(c => c.cartId !== cartId));
   const updateCartQty = (cartId, qty) => setCart(cart.map(c => c.cartId === cartId ? { ...c, qty: Math.max(1, Number(qty)) } : c));
 
-  // 🤖 회원별로 묶어서 보여주기
   const groupedByMember = [];
   cart.forEach(c => {
     let group = groupedByMember.find(g => g.memberId === c.memberId);
@@ -689,7 +664,6 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const cartTotalCount = cart.reduce((s, c) => s + c.qty, 0);
   const cartTotalPrice = cart.reduce((s, c) => s + c.price * c.qty, 0);
 
-  // 🤖 "주문" 누르면 장바구니에 쌓인 모든 회원의 주문이 한 번에 주문 리스트로 들어감
   const submitAll = () => {
     if (groupedByMember.length === 0) return;
     const newOrders = groupedByMember.map(g => ({
@@ -732,7 +706,6 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
       <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 추가하면 그 회원 이름 아래 바로 쌓여요. 다 모이면 주문 버튼으로 한 번에 등록해요" w={w} />
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1fr 360px", gap: 16 }}>
-        {/* 왼쪽: 입력 */}
         <div>
           <div style={{ ...S.card, marginBottom: 14 }}>
             <Grid cols={3} w={w} gap={12}>
@@ -755,7 +728,6 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
             {!memberId && <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>회원을 먼저 선택해주세요</div>}
           </div>
 
-          {/* 회원별로 쌓인 장바구니 */}
           <div style={S.card}>
             <div style={{ fontWeight: 800, marginBottom: 14 }}>담긴 주문 — 인원 {groupedByMember.length}명 · 물품 {cart.length}건</div>
             {groupedByMember.length === 0
@@ -780,7 +752,6 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
           </div>
         </div>
 
-        {/* 오른쪽: 전체 요약 + 일괄 주문 버튼 */}
         <div>
           <div style={{ ...S.card, position: mob ? "static" : "sticky", top: 16 }}>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>전체 주문 요약</div>
@@ -839,7 +810,6 @@ function OrderList({ orders, setOrders, rounds, w }) {
     <div>
       <Title eyebrow="Orders" title="주문 리스트" sub={`전체 ${orders.length}건`} w={w} />
 
-      {/* 차수 필터 */}
       <div style={{ marginBottom: 14 }}>
         <label style={S.label}>차수 선택</label>
         <select style={{ ...S.select, maxWidth: mob ? "100%" : 280 }} value={roundFilter} onChange={e => setRoundFilter(e.target.value)}>
@@ -847,7 +817,6 @@ function OrderList({ orders, setOrders, rounds, w }) {
         </select>
       </div>
 
-      {/* 요약 */}
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr 1fr" : "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
         {[
           { label: "총 판매액", value: totalPrice, color: C.ink, bg: C.bg },
@@ -945,7 +914,6 @@ function ReportPage({ orders, rounds, w }) {
     return r && o.roundId === r.id;
   });
 
-  // 🤖 물품별 자동 집계
   const productAgg = {};
   scoped.forEach(o => o.items.forEach(it => {
     if (!productAgg[it.name]) productAgg[it.name] = { name: it.name, qty: 0, cost: 0, price: 0, margin: 0 };
@@ -956,7 +924,6 @@ function ReportPage({ orders, rounds, w }) {
   }));
   const productList = Object.values(productAgg).sort((a, b) => b.price - a.price);
 
-  // 🤖 인원별 자동 집계
   const memberAgg = {};
   scoped.forEach(o => {
     if (!memberAgg[o.memberName]) memberAgg[o.memberName] = { name: o.memberName, qty: 0, cost: 0, price: 0, margin: 0, paid: 0 };
@@ -999,7 +966,6 @@ function ReportPage({ orders, rounds, w }) {
         </select>
       </div>
 
-      {/* 총계 카드 */}
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr 1fr" : "repeat(5,1fr)", gap: 10, marginBottom: 20 }}>
         {[
           { label: "총 수량", value: `${grandTotal.qty}개`, color: C.ink },
@@ -1105,7 +1071,7 @@ function ReportPage({ orders, rounds, w }) {
 function RoundManager({ rounds, setRounds, orders, setOrders, members, products, w }) {
   const mob = isMob(w);
   const [newRoundName, setNewRoundName] = useState("");
-  const [pastOpen, setPastOpen] = useState(null); // round id currently adding past data to
+  const [pastOpen, setPastOpen] = useState(null);
   const [memberId, setMemberId] = useState("");
   const [items, setItems] = useState([]);
   const [pickProduct, setPickProduct] = useState("");
@@ -1134,7 +1100,6 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
 
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
 
-  // 과거 데이터 입력용 장바구니
   const addItem = () => {
     if (!pickProduct) return;
     const product = products.find(p => p.id === Number(pickProduct));
@@ -1175,7 +1140,6 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
     <div>
       <Title eyebrow="Rounds" title="차수 관리" sub="매 회차(예: 6월 4째주 주문)를 만들고, 지난 기록도 차수별로 입력할 수 있어요" w={w} />
 
-      {/* 새 차수 시작 */}
       <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
         {activeRound && (
@@ -1187,7 +1151,6 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
         </div>
       </div>
 
-      {/* 차수 목록 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rounds.length === 0
           ? <div style={{ ...S.card, textAlign: "center", color: C.muted }}>등록된 차수가 없습니다. 위에서 첫 차수를 시작해보세요.</div>
@@ -1206,7 +1169,6 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
                 </div>
               </div>
 
-              {/* 지난 주문 수동 입력 폼 */}
               {pastOpen === r.id && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
                   <Grid cols={3} w={w}>
@@ -1276,13 +1238,10 @@ export default function App() {
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
   const [rounds, setRounds] = useState(() => load("order-rounds", []));
-  const [syncStatus, setSyncStatus] = useState(SHEET_API_URL.includes("여기에") ? "off" : "loading"); // off | loading | synced | error
+  const [syncStatus, setSyncStatus] = useState("loading");
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
 
-  // 🤖 앱이 열릴 때 구글 시트에서 최신 데이터를 불러와서 화면에 반영
-  // 단, 시트가 완전히 비어있고 내 PC에는 기존 데이터가 있으면 — 절대 자동으로 덮어쓰지 않고 먼저 물어봄
   useEffect(() => {
-    if (SHEET_API_URL.includes("https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec")) return;
     let cancelled = false;
     (async () => {
       const data = await fetchAllFromSheet();
@@ -1293,7 +1252,6 @@ export default function App() {
       const localHasData = (load("order-members", []).length > 0) || (load("order-products", []).length > 0) || (load("order-orders", []).length > 0);
 
       if (sheetIsEmpty && localHasData) {
-        // 시트는 비어있는데 내 PC엔 기존 데이터가 있음 → 자동 덮어쓰기 절대 금지, 사용자에게 먼저 묻기
         setShowUploadPrompt(true);
         setSyncStatus("error");
         return;
@@ -1308,7 +1266,6 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // 🤖 내 PC(이 브라우저)에 저장된 기존 데이터를 구글 시트로 한 번에 업로드
   const uploadLocalToSheet = async () => {
     setSyncStatus("loading");
     saveSynced("order-members", members);
@@ -1316,7 +1273,7 @@ export default function App() {
     saveSynced("order-rounds", rounds);
     saveSynced("order-orders", orders);
     setShowUploadPrompt(false);
-    setTimeout(() => setSyncStatus("synced"), 1200); // no-cors 특성상 응답 확인이 불가해 잠시 후 완료 처리
+    setTimeout(() => setSyncStatus("synced"), 1200);
   };
   const currentRound = rounds.find(r => r.active) || null;
 
