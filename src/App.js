@@ -120,7 +120,7 @@ function CompactSelect({ value, onChange, options, placeholder = "선택하세�
   }, []);
 
   const selected = options.find(o => String(o.value) === String(value));
-  const filtered = query ? options.filter(o => o.label.includes(query)) : options;
+  const filtered = query ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase())) : options;
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
@@ -151,6 +151,81 @@ function CompactSelect({ value, onChange, options, placeholder = "선택하세�
                   onClick={() => { onChange(o.value); setOpen(false); setQuery(""); }}
                   style={{ padding: "10px 12px", fontSize: 13, cursor: "pointer", backgroundColor: String(o.value) === String(value) ? C.accentLight : "transparent", color: String(o.value) === String(value) ? C.accent : C.ink, fontWeight: String(o.value) === String(value) ? 700 : 400 }}
                   onMouseDown={e => e.preventDefault()}
+                >
+                  {o.label}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  편집 가능한 드롭다운 — 직접 타이핑해서 검색하고, 엔터/탭으로 자동완성
+// ════════════════════════════════════════════════════════════════════
+function EditableSelect({ value, onChange, options, placeholder = "입력 또는 선택", onConfirm }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const selected = options.find(o => String(o.value) === String(value));
+
+  // 🤖 외부에서 value가 바뀌면(예: 주문 등록 후 초기화) 입력창 텍스트도 같이 동기화
+  useEffect(() => { setQuery(selected ? selected.label : ""); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    document.addEventListener("touchstart", h);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("touchstart", h); };
+  }, []);
+
+  const filtered = query ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase())) : options;
+
+  const pick = (o) => {
+    onChange(o.value);
+    setQuery(o.label);
+    setOpen(false);
+    if (onConfirm) onConfirm(o.value);
+  };
+
+  // 🤖 엔터/탭 — 검색된 목록 중 맨 위(가장 잘 맞는) 항목으로 바로 확정
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered.length > 0) pick(filtered[0]);
+    } else if (e.key === "Tab") {
+      if (filtered.length > 0 && query && String(filtered[0].value) !== String(value)) pick(filtered[0]);
+      else setOpen(false);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(""); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        style={S.input}
+      />
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 60, backgroundColor: C.surface, border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(43,36,28,0.16)", overflow: "hidden" }}>
+          <div style={{ maxHeight: 216, overflowY: "auto" }}>
+            {filtered.length === 0
+              ? <div style={{ padding: "12px", fontSize: 13, color: C.muted, textAlign: "center" }}>결과 없음</div>
+              : filtered.map((o, i) => (
+                <div
+                  key={o.value}
+                  onClick={() => pick(o)}
+                  onMouseDown={e => e.preventDefault()}
+                  style={{ padding: "10px 12px", fontSize: 13, cursor: "pointer", backgroundColor: i === 0 ? C.accentLight : "transparent", color: i === 0 ? C.accent : C.ink, fontWeight: i === 0 ? 700 : 400 }}
                 >
                   {o.label}
                 </div>
@@ -236,7 +311,7 @@ function ProductManager({ products, setProducts, w }) {
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); saveSynced("order-products", u); if (selectedRowId === id) setSelectedRowId(null); };
 
-  const filtered = sortList(products.filter(p => p.name.includes(search)));
+  const filtered = sortList(products.filter(p => p.name.toLowerCase().includes(search.toLowerCase())));
 
   const sortOptions = [
     { id: "asc", label: "가나다 오름차순" },
@@ -495,7 +570,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       return a.name.localeCompare(b.name, "ko");
     });
   };
-  const filtered = sortRows(rows.filter(r => r.name.includes(search)));
+  const filtered = sortRows(rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase())));
   const editIndex = (!isNewDraft && editingId) ? filtered.findIndex(r => r.id === editingId) : -1;
   const goPrev = () => { if (editIndex > 0) openEdit(filtered[editIndex - 1]); };
   const goNext = () => { if (editIndex >= 0 && editIndex < filtered.length - 1) openEdit(filtered[editIndex + 1]); };
@@ -850,10 +925,10 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
           <div style={{ ...S.card, marginBottom: 14 }}>
             <Grid cols={3} w={w} gap={12}>
               <Field label="주문자 (회원) *">
-                <CompactSelect value={memberId} onChange={setMemberId} options={memberOptions} placeholder="회원을 선택하세요" />
+                <EditableSelect value={memberId} onChange={setMemberId} options={memberOptions} placeholder="이름 입력 또는 선택" />
               </Field>
               <Field label="물품 선택">
-                <CompactSelect value={pickProduct} onChange={setPickProduct} options={productOptions} placeholder="물품을 선택하세요" />
+                <EditableSelect value={pickProduct} onChange={setPickProduct} options={productOptions} placeholder="물품명 입력 또는 선택" />
               </Field>
               <Field label="수량"><input style={S.input} type="number" min="1" value={pickQty} onChange={e => setPickQty(e.target.value)} /></Field>
             </Grid>
@@ -1356,7 +1431,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   };
   const handleDragEnd = () => { setDragIndex(null); setOverIndex(null); };
 
-  const filteredPickerProducts = products.filter(p => p.name.includes(pickerSearch));
+  const filteredPickerProducts = products.filter(p => p.name.toLowerCase().includes(pickerSearch.toLowerCase()));
 
   return (
     <div>
@@ -1411,11 +1486,11 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
               {filteredPickerProducts.length === 0
                 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontSize: 13 }}>등록된 물품이 없습니다</div>
                 : filteredPickerProducts.map(p => (
-                  <label key={p.id} onClick={() => togglePick(p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: pickerSelected.includes(p.id) ? C.accentLight : "transparent" }}>
-                    <input type="checkbox" readOnly checked={pickerSelected.includes(p.id)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  <div key={p.id} onClick={() => togglePick(p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: pickerSelected.includes(p.id) ? C.accentLight : "transparent" }}>
+                    <input type="checkbox" readOnly checked={pickerSelected.includes(p.id)} style={{ width: 17, height: 17, pointerEvents: "none" }} />
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{p.name}</span>
                     <span style={{ fontSize: 12, color: C.muted }}>{won(p.price)}</span>
-                  </label>
+                  </div>
                 ))}
             </div>
 
@@ -1499,7 +1574,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
                   ) : clickedId === r.id ? (
                     <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => { setActiveRound(r.id); setClickedId(null); }}>이 차수로 선택</button>
                   ) : null}
-                  <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>
+                  {clickedId === r.id && <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>}
                 </div>
               </div>
             </div>
@@ -1522,6 +1597,8 @@ function QuarterlyReport({ orders, rounds, w }) {
   const [year, setYear] = useState(thisYear);
   const [startMonth, setStartMonth] = useState(defaultStart);
   const [endMonth, setEndMonth] = useState(defaultStart + 2);
+  const [startWeek, setStartWeek] = useState(1); // 1=첫째주
+  const [endWeek, setEndWeek] = useState(5); // 5=다섯째주(=그 달의 끝까지)
 
   const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
   const weekRoundNo = (week) => { const i = weekOptions.indexOf(week); return i >= 0 ? i + 1 : 0; };
@@ -1546,11 +1623,18 @@ function QuarterlyReport({ orders, rounds, w }) {
     { label: "3분기 (7~9월)", start: 7, end: 9 },
     { label: "4분기 (10~12월)", start: 10, end: 12 },
   ];
+  const applyQuarter = (q) => { setStartMonth(q.start); setEndMonth(q.end); setStartWeek(1); setEndWeek(5); };
 
-  // 🤖 선택한 기간에 속한 차수를 월별로 묶음 (연도/월 정보를 이름에서도 복구해서 매칭)
+  // 🤖 선택한 기간(월+주차 단위)에 속한 차수를 월별로 묶음 — 연도/월 정보를 이름에서도 복구해서 매칭
+  const startKey = startMonth * 10 + startWeek;
+  const endKey = endMonth * 10 + endWeek;
   const roundsWithMeta = rounds.map(r => ({ ...r, _meta: parseRoundMeta(r) }));
   const roundsInRange = roundsWithMeta
-    .filter(r => r._meta.year === year && r._meta.month >= startMonth && r._meta.month <= endMonth)
+    .filter(r => {
+      if (r._meta.year !== year || !r._meta.month) return false;
+      const k = r._meta.month * 10 + weekRoundNo(r._meta.week);
+      return k >= startKey && k <= endKey;
+    })
     .slice()
     .sort((a, b) => (a._meta.month - b._meta.month) || (weekRoundNo(a._meta.week) - weekRoundNo(b._meta.week)));
 
@@ -1585,7 +1669,9 @@ function QuarterlyReport({ orders, rounds, w }) {
   });
   const grandTotal = monthGroups.reduce((s, g) => s + g.monthTotal, 0);
   const grandMargin = monthGroups.reduce((s, g) => s + g.monthMargin, 0);
-  const periodLabel = startMonth === endMonth ? `${startMonth}월` : `${startMonth}~${endMonth}월`;
+  const periodLabel = (startWeek === 1 && endWeek === 5)
+    ? (startMonth === endMonth ? `${startMonth}월` : `${startMonth}~${endMonth}월`)
+    : `${startMonth}월 ${weekOptions[startWeek - 1]} ~ ${endMonth}월 ${weekOptions[endWeek - 1]}`;
 
   const exportExcel = () => {
     const rowsOut = [["월구분", "품명", "수량", "단가", "금액", "마진"]];
@@ -1653,16 +1739,28 @@ function QuarterlyReport({ orders, rounds, w }) {
               {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
             </select>
           </Field>
+          <Field label="시작 주차">
+            <select style={S.select} value={startWeek} onChange={e => setStartWeek(Number(e.target.value))}>
+              {weekOptions.map((wk, i) => <option key={wk} value={i + 1}>{wk}부터</option>)}
+            </select>
+          </Field>
+        </Grid>
+        <Grid cols={3} w={w}>
           <Field label="종료월">
             <select style={S.select} value={endMonth} onChange={e => setEndMonth(Number(e.target.value))}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
             </select>
           </Field>
+          <Field label="종료 주차">
+            <select style={S.select} value={endWeek} onChange={e => setEndWeek(Number(e.target.value))}>
+              {weekOptions.map((wk, i) => <option key={wk} value={i + 1}>{wk}까지</option>)}
+            </select>
+          </Field>
         </Grid>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {quarterPresets.map(q => (
-            <button key={q.label} onClick={() => { setStartMonth(q.start); setEndMonth(q.end); }}
-              style={{ borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: startMonth === q.start && endMonth === q.end ? C.accent : C.surface, color: startMonth === q.start && endMonth === q.end ? "#fff" : C.muted, fontFamily: "inherit", border: `1px solid ${startMonth === q.start && endMonth === q.end ? C.accent : C.border}` }}>{q.label}</button>
+            <button key={q.label} onClick={() => applyQuarter(q)}
+              style={{ borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? C.accent : C.surface, color: startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? "#fff" : C.muted, fontFamily: "inherit", border: `1px solid ${startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? C.accent : C.border}` }}>{q.label}</button>
           ))}
         </div>
       </div>
