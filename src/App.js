@@ -277,12 +277,13 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
 
   const saveMember = () => {
     if (!form.name) return;
+    const data = { ...form, note: form.note.trim() || "회원" };
     let u;
     if (editing) {
-      u = members.map(m => m.id === editing ? { ...form, id: editing } : m);
+      u = members.map(m => m.id === editing ? { ...data, id: editing } : m);
       setEditing(null);
     } else {
-      u = [...members, { ...form, id: Date.now() }];
+      u = [...members, { ...data, id: Date.now() }];
     }
     u = sortByName(u);
     setMembers(u); save("order-members", u);
@@ -292,7 +293,7 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const saveBulk = () => {
     const valid = rows.filter(r => r.name.trim());
     if (valid.length === 0) return;
-    const newMembers = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), phone: r.phone.trim(), note: r.note.trim() }));
+    const newMembers = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), phone: r.phone.trim(), note: r.note.trim() || "회원" }));
     const u = sortByName([...members, ...newMembers]);
     setMembers(u); save("order-members", u);
     setRows([blankRow()]); setAdding(false);
@@ -343,41 +344,55 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
           {editing ? (
-            <Grid cols={2} w={w} gap={16}>
-              {/* 왼쪽: 회원 정보 수정 */}
-              <div>
-                <div style={{ fontWeight: 800, marginBottom: 14 }}>회원 정보 수정</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+            <div>
+              {/* 상단: 닫기 버튼 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{form.name} 정보</div>
+                <button onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}
+                  style={{ border: "none", backgroundColor: C.surface, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  ×
+                </button>
+              </div>
+
+              {/* 회원 정보 수정 */}
+              <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: mob ? 16 : 20, border: `1px solid ${C.border}`, marginBottom: 16 }}>
+                <div style={{ fontWeight: 800, marginBottom: 14 }}>✏️ 회원 정보 수정</div>
+                <Grid cols={3} w={w}>
                   <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
                   <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
                   <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
-                </div>
+                </Grid>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button style={S.btn()} onClick={saveMember}>수정 저장</button>
-                  <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
+                  <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>닫기</button>
                 </div>
               </div>
 
-              {/* 오른쪽: 차수별 구매 이력 */}
-              <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>🛒 구매 이력</div>
-                <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>누적 {memberTotalQty}개 · {won(memberTotalPrice)}</div>
+              {/* 차수별 구매 이력 — 넓게, 카드형 */}
+              <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: mob ? 16 : 20, border: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontWeight: 800, fontSize: 15 }}>🛒 구매 이력</div>
+                  <div style={{ fontSize: 13, color: C.muted }}>누적 <strong style={{ color: C.ink }}>{memberTotalQty}개</strong> · <strong style={{ color: C.accent }}>{won(memberTotalPrice)}</strong></div>
+                </div>
+                <div style={{ height: 1, backgroundColor: C.border, margin: "12px 0 16px" }} />
                 {historyByRound.length === 0
-                  ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "20px 0" }}>구매 이력이 없습니다</div>
-                  : historyByRound.map(g => (
-                    <div key={g.roundId || "none"} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{won(g.totalPrice)}</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
-                      <div style={{ fontSize: 11, color: g.paidAmount >= g.totalPrice ? C.green : C.red }}>
-                        {g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`}
-                      </div>
+                  ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>구매 이력이 없습니다</div>
+                  : (
+                    <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+                      {historyByRound.map(g => (
+                        <div key={g.roundId || "none"} style={{ backgroundColor: C.bg, borderRadius: 10, padding: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
+                            <span style={{ fontSize: 14, fontWeight: 800 }}>{won(g.totalPrice)}</span>
+                          </div>
+                          <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, marginBottom: 8 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                          <Badge text={g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`} color={g.paidAmount >= g.totalPrice ? C.green : C.red} bg={g.paidAmount >= g.totalPrice ? C.greenLight : C.redLight} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
               </div>
-            </Grid>
+            </div>
           ) : (
             <>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 회원 등록</div>
