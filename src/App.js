@@ -229,6 +229,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const [items, setItems] = useState([]);
   const [pickProduct, setPickProduct] = useState("");
   const [pickQty, setPickQty] = useState(1);
+  const [pending, setPending] = useState([]); // 아직 제출 전, 여러 회원의 주문이 쌓이는 곳
 
   const addItem = () => {
     if (!pickProduct) return;
@@ -249,27 +250,45 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const totalPrice = items.reduce((s, c) => s + c.price * c.qty, 0);
   const totalMargin = totalPrice - totalCost;
 
-  // 🤖 "주문" 누르면 즉시 주문 리스트에 추가되고, 입력창은 다음 사람 받을 준비로 초기화
-  // 🤖 현재 진행 중인 차수(currentRound)에 자동으로 귀속됨
-  const submitOrder = () => {
+  // 🤖 한 사람의 주문을 "주문 물품" 목록에 추가 (아직 제출은 안 됨)
+  const addToPending = () => {
     if (!memberId || items.length === 0) return;
     const member = members.find(m => m.id === Number(memberId));
-    const newOrder = {
-      id: Date.now(),
-      roundId: currentRound?.id || null,
+    setPending([...pending, {
+      tempId: Date.now(),
       memberId: Number(memberId),
       memberName: member.name,
       items,
       totalCost,
       totalPrice,
       totalMargin,
+    }]);
+    setItems([]); setMemberId("");
+  };
+  const removePending = (tempId) => setPending(pending.filter(p => p.tempId !== tempId));
+
+  const pendingTotalPrice = pending.reduce((s, p) => s + p.totalPrice, 0);
+  const pendingTotalCount = pending.reduce((s, p) => s + p.items.reduce((s2, i) => s2 + i.qty, 0), 0);
+
+  // 🤖 "주문" 누르면 쌓아둔 모든 회원의 주문이 한 번에 주문 리스트로 들어감
+  const submitAll = () => {
+    if (pending.length === 0) return;
+    const newOrders = pending.map(p => ({
+      id: Date.now() + Math.random(),
+      roundId: currentRound?.id || null,
+      memberId: p.memberId,
+      memberName: p.memberName,
+      items: p.items,
+      totalCost: p.totalCost,
+      totalPrice: p.totalPrice,
+      totalMargin: p.totalMargin,
       paid: false,
       paidAmount: 0,
       date: todayStr(),
-    };
-    const u = [...orders, newOrder];
+    }));
+    const u = [...orders, ...newOrders];
     setOrders(u); save("order-orders", u);
-    setItems([]); setMemberId("");
+    setPending([]);
   };
 
   return (
@@ -291,8 +310,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
           </div>
         </div>
       )}
-      <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 추가한 뒤 주문 버튼을 누르면 주문 리스트에 바로 등록돼요" w={w} />
-
+      <Title eyebrow="New Order" title="주문 입력" sub="회원과 물품을 골라 목록에 모은 뒤, 다 모이면 주문 버튼 한 번으로 전체를 등록해요" w={w} />
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1fr 360px", gap: 16 }}>
         {/* 왼쪽: 입력 */}
@@ -321,11 +339,11 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
             <button style={S.btn(C.navy)} onClick={addItem}>+ 물품 추가</button>
           </div>
 
-          {/* 담긴 물품 */}
-          <div style={S.card}>
-            <div style={{ fontWeight: 800, marginBottom: 14 }}>주문 물품 ({items.length})</div>
+          {/* 현재 입력 중인 사람의 담긴 물품 */}
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={{ fontWeight: 800, marginBottom: 14 }}>{members.find(m => m.id === Number(memberId))?.name || "선택된 회원"}님 물품 ({items.length})</div>
             {items.length === 0
-              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>아직 추가한 물품이 없습니다</div>
+              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>아직 추가한 물품이 없습니다</div>
               : items.map(c => (
                 <div key={c.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}`, flexWrap: mob ? "wrap" : "nowrap" }}>
                   <span style={{ flex: 1, fontWeight: 600, fontSize: 14, minWidth: 100 }}>{c.name}</span>
@@ -335,31 +353,47 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
                   <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => removeItem(c.productId)}>삭제</button>
                 </div>
               ))}
+            {items.length > 0 && (
+              <button style={{ ...S.btn(C.green), width: "100%", marginTop: 14 }} onClick={addToPending} disabled={!memberId}>✓ 이 사람 주문 담기</button>
+            )}
+          </div>
+
+          {/* 인원별로 쌓인 주문 목록 */}
+          <div style={S.card}>
+            <div style={{ fontWeight: 800, marginBottom: 14 }}>주문 물품 — 담긴 인원 ({pending.length})</div>
+            {pending.length === 0
+              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>아직 담긴 인원이 없습니다</div>
+              : pending.map(p => (
+                <div key={p.tempId} style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontWeight: 800, fontSize: 15 }}>{p.memberName}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: C.accent }}>{won(p.totalPrice)}</span>
+                      <button style={{ ...S.btn(C.red), padding: "4px 10px", fontSize: 11 }} onClick={() => removePending(p.tempId)}>삭제</button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{p.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                </div>
+              ))}
           </div>
         </div>
 
-        {/* 오른쪽: 요약 + 주문 버튼 */}
+        {/* 오른쪽: 전체 요약 + 일괄 주문 버튼 */}
         <div>
           <div style={{ ...S.card, position: mob ? "static" : "sticky", top: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>주문 요약</div>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>전체 주문 요약</div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>주문자</span><span style={{ fontWeight: 700 }}>{members.find(m => m.id === Number(memberId))?.name || "-"}</span>
+              <span style={{ color: C.muted }}>담긴 인원</span><span style={{ fontWeight: 700 }}>{pending.length}명</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>총 개수</span><span style={{ fontWeight: 700 }}>{items.reduce((s, c) => s + c.qty, 0)}개</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>총 매입가</span><span>{won(totalCost)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>예상 마진</span><span style={{ color: C.green, fontWeight: 700 }}>{won(totalMargin)}</span>
+              <span style={{ color: C.muted }}>총 개수</span><span style={{ fontWeight: 700 }}>{pendingTotalCount}개</span>
             </div>
             <div style={{ backgroundColor: C.accentLight, borderRadius: 10, padding: 14, margin: "14px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 4 }}>받아야 할 금액</div>
-              <div style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{won(totalPrice)}</div>
+              <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 4 }}>받아야 할 총 금액</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{won(pendingTotalPrice)}</div>
             </div>
-            <button style={{ ...S.btn(), width: "100%", padding: "13px", fontSize: 14 }} onClick={submitOrder} disabled={!memberId || items.length === 0}>주문</button>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 8, textAlign: "center" }}>누르면 바로 주문 리스트에 추가돼요</div>
+            <button style={{ ...S.btn(), width: "100%", padding: "13px", fontSize: 14 }} onClick={submitAll} disabled={pending.length === 0}>주문</button>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 8, textAlign: "center" }}>누르면 담긴 {pending.length}명 전체가 주문 리스트에 한 번에 추가돼요</div>
           </div>
         </div>
       </div>
