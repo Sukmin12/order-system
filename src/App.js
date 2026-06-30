@@ -237,7 +237,7 @@ function ProductManager({ products, setProducts, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  회원 관리
 // ════════════════════════════════════════════════════════════════════
-function MemberManager({ members, setMembers, w }) {
+function MemberManager({ members, setMembers, orders, rounds, w }) {
   const mob = isMob(w);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -302,6 +302,24 @@ function MemberManager({ members, setMembers, w }) {
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
   const filtered = sortList(members.filter(m => m.name.includes(search)));
 
+  // 🤖 선택된 회원의 차수별 구매 이력 자동 집계
+  const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
+  const memberOrders = editing ? orders.filter(o => o.memberId === editing) : [];
+  const historyByRound = [];
+  memberOrders.forEach(o => {
+    let group = historyByRound.find(g => g.roundId === o.roundId);
+    if (!group) { group = { roundId: o.roundId, roundName: roundName(o.roundId), items: [], totalPrice: 0, paidAmount: 0 }; historyByRound.push(group); }
+    o.items.forEach(it => {
+      const existing = group.items.find(i => i.name === it.name);
+      if (existing) existing.qty += it.qty;
+      else group.items.push({ name: it.name, qty: it.qty });
+    });
+    group.totalPrice += o.totalPrice;
+    group.paidAmount += o.paidAmount || 0;
+  });
+  const memberTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
+  const memberTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
+
   const sortOptions = [
     { id: "position", label: "직분 우선순" },
     { id: "asc", label: "가나다 오름차순" },
@@ -325,18 +343,41 @@ function MemberManager({ members, setMembers, w }) {
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
           {editing ? (
-            <>
-              <div style={{ fontWeight: 800, marginBottom: 14 }}>회원 정보 수정</div>
-              <Grid cols={3} w={w}>
-                <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
-                <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
-                <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
-              </Grid>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={S.btn()} onClick={saveMember}>수정 저장</button>
-                <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
+            <Grid cols={2} w={w} gap={16}>
+              {/* 왼쪽: 회원 정보 수정 */}
+              <div>
+                <div style={{ fontWeight: 800, marginBottom: 14 }}>회원 정보 수정</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+                  <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
+                  <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+                  <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={S.btn()} onClick={saveMember}>수정 저장</button>
+                  <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
+                </div>
               </div>
-            </>
+
+              {/* 오른쪽: 차수별 구매 이력 */}
+              <div style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>🛒 구매 이력</div>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>누적 {memberTotalQty}개 · {won(memberTotalPrice)}</div>
+                {historyByRound.length === 0
+                  ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "20px 0" }}>구매 이력이 없습니다</div>
+                  : historyByRound.map(g => (
+                    <div key={g.roundId || "none"} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <Badge text={g.roundName} color={C.accent} bg={C.accentLight} />
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{won(g.totalPrice)}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>{g.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                      <div style={{ fontSize: 11, color: g.paidAmount >= g.totalPrice ? C.green : C.red }}>
+                        {g.paidAmount >= g.totalPrice ? "입금완료" : `미수 ${won(g.totalPrice - g.paidAmount)}`}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </Grid>
           ) : (
             <>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 회원 등록</div>
@@ -1063,7 +1104,7 @@ export default function App() {
       case "report": return <ReportPage orders={orders} rounds={rounds} w={w} />;
       case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} setOrders={setOrders} members={members} products={products} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} w={w} />;
-      case "members": return <MemberManager members={members} setMembers={setMembers} w={w} />;
+      case "members": return <MemberManager members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} />;
       default: return null;
     }
   };
