@@ -344,9 +344,10 @@ function ProductManager({ products, setProducts, w }) {
       </div>
 
       <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 480 : 600 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 520 : 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
+              <th style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: C.muted, borderBottom: `1px solid ${C.border}`, fontSize: 12, width: 48 }}>번호</th>
               {["품명","매입원가(입고가)","판매가","마진",""].map(h => (
                 <th key={h} style={{ padding: "10px 14px", textAlign: h === "품명" ? "left" : "right", fontWeight: 700, color: C.muted, borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>{h}</th>
               ))}
@@ -354,11 +355,12 @@ function ProductManager({ products, setProducts, w }) {
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
-              : filtered.map(p => {
+              ? <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
+              : filtered.map((p, i) => {
                 const m = (Number(p.price) || 0) - (Number(p.cost) || 0);
                 return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "11px 14px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
                     <td style={{ padding: "11px 14px", fontWeight: 700 }}>{p.name}</td>
                     <td style={{ padding: "11px 14px", textAlign: "right", color: C.muted }}>{won(p.cost)}</td>
                     <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 600 }}>{won(p.price)}</td>
@@ -386,54 +388,27 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const mob = isMob(w);
   const [rows, setRows] = useState(members);
   const [search, setSearch] = useState("");
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState(null); // 기존 회원 수정 대상 id (신규 작성 중엔 null)
   const [form, setForm] = useState(null);
+  const [isNewDraft, setIsNewDraft] = useState(false); // 🤖 신규 작성 중인지 — 저장 누르기 전까진 목록에 추가 안 함
   const [selectedIds, setSelectedIds] = useState([]);
-  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 클릭해서 보더로 선택 표시 + 우측 구매내역 버튼 노출용
-  const [historyId, setHistoryId] = useState(null); // 🤖 구매내역 팝업 대상 회원 id
+  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 정보수정/구매내역 버튼 노출용
+  const [historyId, setHistoryId] = useState(null);
 
   useEffect(() => { setRows(members); }, [members]);
 
-  // 🤖 전체 데이터 컬럼 (엑셀 붙여넣기/내보내기/수정팝업에서 사용, 표에는 일부만 표시)
-  const cols = [
-    { key: "birthYear1", label: "출생년도", w: 80 },
-    { key: "visit", label: "심방여부", w: 70, type: "check" },
-    { key: "group1", label: "회원구분1", w: 90 },
-    { key: "group2", label: "회원구분2", w: 90 },
-    { key: "name", label: "이름", w: 90 },
-    { key: "phone", label: "전화번호", w: 120 },
-    { key: "position", label: "직분", w: 80 },
-    { key: "address", label: "주소", w: 160 },
-    { key: "birthYear2", label: "출생년도", w: 80 },
-    { key: "birthMonth", label: "월", w: 50 },
-    { key: "birthDay", label: "일", w: 50 },
-    { key: "husband", label: "남편", w: 90 },
-    { key: "childBirth", label: "자녀(출생년도)", w: 120 },
-    { key: "note", label: "비고", w: 120 },
-    { key: "childbirth", label: "출산", w: 80 },
-    { key: "celebrate", label: "축하내용", w: 140 },
-  ];
-
-  // 🤖 표에는 번호/이름/전화번호/직분만 보여줌 (나머지는 이름 클릭 시 팝업에서)
-  const displayCols = [
-    { key: "phone", label: "전화번호" },
-    { key: "position", label: "직분" },
-  ];
-
-  const blankRow = () => {
-    const r = { id: Date.now() + Math.random() };
-    cols.forEach(c => { r[c.key] = c.type === "check" ? false : ""; });
-    return r;
-  };
+  // 🤖 회원 데이터 항목 — 이름/전화번호/직분/비고만 사용
+  const blankRow = () => ({ id: Date.now() + Math.random(), name: "", phone: "", position: "", note: "" });
 
   const commit = (u) => { setRows(u); setMembers(u); saveSynced("order-members", u); };
 
+  // "+ 회원 추가" → 바로 목록에 넣지 않고 팝업만 연다(저장 눌러야 진짜 추가됨)
   const addRow = () => {
-    const nr = blankRow();
-    const u = [...rows, nr];
-    commit(u);
-    setForm(nr); setEditingId(nr.id);
+    setForm(blankRow());
+    setEditingId(null);
+    setIsNewDraft(true);
   };
+
   const removeRow = (id) => {
     if (!window.confirm("이 회원을 삭제할까요?")) return;
     const u = rows.filter(r => r.id !== id);
@@ -457,53 +432,56 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     setSelectedIds([]);
   };
 
-  const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setSelectedRowId(r.id); };
-  const closeEdit = () => { setEditingId(null); setForm(null); };
+  // 행 클릭 = 선택(보더 강조)만 함. 팝업은 "정보수정" 버튼을 눌러야 열림
+  const selectRow = (r) => setSelectedRowId(prev => prev === r.id ? null : r.id);
+
+  const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setIsNewDraft(false); };
+  const closeEdit = () => { setEditingId(null); setForm(null); setIsNewDraft(false); };
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
   const saveEdit = () => {
-    if (!form) return;
-    const u = rows.map(r => r.id === editingId ? { ...form } : r);
-    commit(u);
+    if (!form || !form.name.trim()) return;
+    if (isNewDraft) {
+      const u = [...rows, form];
+      commit(u);
+    } else {
+      const u = rows.map(r => r.id === editingId ? { ...form } : r);
+      commit(u);
+    }
     closeEdit();
   };
 
-  // 🤖 엑셀 붙여넣기 — 표 컬럼 순서와 동일하게 매칭
+  // 🤖 엑셀 붙여넣기 — 이름, 전화번호, 직분, 비고 순서
   const handlePaste = (e) => {
     const text = e.clipboardData.getData("text");
     if (!text || !text.includes("\t")) return;
     e.preventDefault();
     const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
-    const yes = (v) => { const t = (v || "").trim(); return t === "O" || t === "o" || t === "예"; };
     const parsed = lines.map(line => {
       const c = line.split("\t");
-      const r = { id: Date.now() + Math.random() };
-      cols.forEach((col, i) => {
-        const raw = (c[i] || "").trim();
-        r[col.key] = col.type === "check" ? yes(raw) : raw;
-      });
-      return r;
+      return {
+        id: Date.now() + Math.random(),
+        name: (c[0] || "").trim(), phone: (c[1] || "").trim(), position: (c[2] || "").trim(), note: (c[3] || "").trim(),
+      };
     }).filter(r => r.name && r.name !== "이름");
     if (parsed.length === 0) return;
     commit([...rows, ...parsed]);
   };
 
   const filtered = rows.filter(r => r.name.includes(search)).sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const editIndex = editingId ? filtered.findIndex(r => r.id === editingId) : -1;
+  const editIndex = (!isNewDraft && editingId) ? filtered.findIndex(r => r.id === editingId) : -1;
   const goPrev = () => { if (editIndex > 0) openEdit(filtered[editIndex - 1]); };
   const goNext = () => { if (editIndex >= 0 && editIndex < filtered.length - 1) openEdit(filtered[editIndex + 1]); };
 
   const exportExcel = () => {
-    const header = ["번호", ...cols.map(c => c.label)];
+    const header = ["번호", "이름", "전화번호", "직분", "비고"];
     const escapeCell = (v) => {
       const s = String(v == null ? "" : v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const body = filtered.map((r, i) => [i + 1, ...cols.map(c => {
-      if (c.type === "check") return r[c.key] ? "O" : "";
-      return r[c.key] || "";
-    })].map(escapeCell).join(","));
+    const body = filtered.map((r, i) => [i + 1, r.name, r.phone, r.position, r.note].map(escapeCell).join(","));
     const csv = [header.join(","), ...body].join("\r\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // 🤖 BOM 포함 — 엑셀에서 한글 깨짐 방지
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -514,7 +492,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     URL.revokeObjectURL(url);
   };
 
-  // 🤖 구매내역 집계 (선택된 회원의 차수별 주문 이력)
+  // 🤖 구매내역 집계
   const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
   const historyMember = historyId ? rows.find(r => r.id === historyId) : null;
   const memberOrders = historyId ? orders.filter(o => o.memberId === historyId) : [];
@@ -536,7 +514,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 명단" sub="이름을 클릭하면 팝업으로 정보를 수정할 수 있고, 선택된 회원은 우측 버튼으로 구매내역도 볼 수 있어요" w={w}
+      <Title eyebrow="Members" title="회원 명단" sub="회원을 클릭해서 선택하면 정보수정 / 구매내역 버튼이 나타나요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
@@ -553,63 +531,40 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
         </div>
       </div>
 
-      {/* 🤖 팝업(모달) 수정 화면 */}
+      {/* 🤖 팝업(모달) 수정/추가 화면 — 이름/전화번호/직분/비고만 입력 */}
       {form && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, backgroundColor: "rgba(15,46,79,0.45)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center", padding: mob ? 0 : 20 }} onClick={closeEdit}>
           <div
-            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "28px 30px", maxWidth: 640, width: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
+            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "28px 30px", maxWidth: 480, width: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>{form.name || "새 회원"} 정보</div>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>{isNewDraft ? "새 회원 추가" : `${form.name || "회원"} 정보 수정`}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={goPrev} disabled={editIndex <= 0} title="이전 회원"
-                  style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: editIndex <= 0 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: editIndex <= 0 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
-                <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{editIndex + 1} / {filtered.length}</span>
-                <button onClick={goNext} disabled={editIndex < 0 || editIndex >= filtered.length - 1} title="다음 회원"
-                  style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: (editIndex < 0 || editIndex >= filtered.length - 1) ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: (editIndex < 0 || editIndex >= filtered.length - 1) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
+                {!isNewDraft && (
+                  <>
+                    <button onClick={goPrev} disabled={editIndex <= 0} title="이전 회원"
+                      style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: editIndex <= 0 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: editIndex <= 0 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
+                    <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{editIndex + 1} / {filtered.length}</span>
+                    <button onClick={goNext} disabled={editIndex < 0 || editIndex >= filtered.length - 1} title="다음 회원"
+                      style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: (editIndex < 0 || editIndex >= filtered.length - 1) ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: (editIndex < 0 || editIndex >= filtered.length - 1) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
+                  </>
+                )}
                 <button onClick={closeEdit} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               </div>
             </div>
 
-            <Grid cols={3} w={w}>
-              <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
-              <Field label="전화번호"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
-              <Field label="직분"><input style={S.input} value={form.position} onChange={e => setF("position", e.target.value)} placeholder="예: 집사, 권사" /></Field>
-            </Grid>
-            <Grid cols={3} w={w}>
-              <Field label="회원구분1"><input style={S.input} value={form.group1} onChange={e => setF("group1", e.target.value)} /></Field>
-              <Field label="회원구분2"><input style={S.input} value={form.group2} onChange={e => setF("group2", e.target.value)} /></Field>
-              <Field label="심방여부">
-                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer" }}>
-                  <input type="checkbox" checked={!!form.visit} onChange={e => setF("visit", e.target.checked)} style={{ width: 17, height: 17, cursor: "pointer" }} />
-                  <span style={{ fontSize: 13 }}>심방함</span>
-                </label>
-              </Field>
-            </Grid>
-            <Field label="주소"><input style={{ ...S.input, marginBottom: 12 }} value={form.address} onChange={e => setF("address", e.target.value)} placeholder="주소" /></Field>
+            <Field label="이름 *"><input style={{ ...S.input, marginBottom: 12 }} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" autoFocus /></Field>
+            <Field label="전화번호"><input style={{ ...S.input, marginBottom: 12 }} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
+            <Field label="직분"><input style={{ ...S.input, marginBottom: 12 }} value={form.position} onChange={e => setF("position", e.target.value)} placeholder="예: 집사, 권사" /></Field>
+            <Field label="비고"><input style={{ ...S.input, marginBottom: 4 }} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="메모" /></Field>
 
-            <Grid cols={3} w={w}>
-              <Field label="출생년도"><input style={S.input} value={form.birthYear1} onChange={e => setF("birthYear1", e.target.value)} placeholder="1990" /></Field>
-              <Field label="월"><input style={S.input} value={form.birthMonth} onChange={e => setF("birthMonth", e.target.value)} placeholder="01" /></Field>
-              <Field label="일"><input style={S.input} value={form.birthDay} onChange={e => setF("birthDay", e.target.value)} placeholder="01" /></Field>
-            </Grid>
-            <Grid cols={2} w={w}>
-              <Field label="남편"><input style={S.input} value={form.husband} onChange={e => setF("husband", e.target.value)} placeholder="남편 이름" /></Field>
-              <Field label="자녀(출생년도)"><input style={S.input} value={form.childBirth} onChange={e => setF("childBirth", e.target.value)} placeholder="예: 2015, 2018" /></Field>
-            </Grid>
-            <Grid cols={3} w={w}>
-              <Field label="출산"><input style={S.input} value={form.childbirth} onChange={e => setF("childbirth", e.target.value)} /></Field>
-              <Field label="축하내용"><input style={S.input} value={form.celebrate} onChange={e => setF("celebrate", e.target.value)} placeholder="예: 결혼, 출산 등" /></Field>
-              <Field label="비고"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} /></Field>
-            </Grid>
-
-            <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", marginTop: 6 }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", marginTop: 16 }}>
               <div style={{ display: "flex", gap: 8 }}>
-                <button style={S.btn()} onClick={saveEdit}>저장</button>
-                <button style={S.btnGhost} onClick={closeEdit}>닫기</button>
+                <button style={S.btn()} onClick={saveEdit} disabled={!form.name.trim()}>저장</button>
+                <button style={S.btnGhost} onClick={closeEdit}>취소</button>
               </div>
-              <button style={{ ...S.btn(C.red), padding: "10px 16px" }} onClick={() => removeRow(editingId)}>회원 삭제</button>
+              {!isNewDraft && <button style={{ ...S.btn(C.red), padding: "10px 16px" }} onClick={() => removeRow(editingId)}>회원 삭제</button>}
             </div>
           </div>
         </div>
@@ -648,50 +603,60 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       )}
 
       <div style={{ marginBottom: 14 }}>
-        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (출생년도, 심방여부(O), 회원구분1, 회원구분2, 이름, 전화번호, 직분, 주소, 출생년도, 월, 일, 남편, 자녀(출생년도), 비고, 출산, 축하내용 순서)</label>
-        <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 표 순서 그대로 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
+        <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (이름, 전화번호, 직분, 비고 순서)</label>
+        <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
       </div>
 
       <input style={{ ...S.input, marginBottom: 12, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
 
-      <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
+      <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
-              <th style={{ padding: "9px 6px", textAlign: "center", borderBottom: `1px solid ${C.border}`, minWidth: 32 }}>
+              <th style={{ padding: "11px 10px", textAlign: "center", borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, width: 36 }}>
                 <input type="checkbox" checked={filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id))} onChange={() => toggleSelectAll(filtered.map(r => r.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
               </th>
-              <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 40 }}>번호</th>
-              <th style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 100 }}>이름</th>
-              {displayCols.map(c => <th key={c.key} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{c.label}</th>)}
-              <th style={{ padding: "9px 6px", borderBottom: `1px solid ${C.border}` }}></th>
+              <th style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, width: 50 }}>번호</th>
+              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 100 }}>이름</th>
+              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 130 }}>전화번호</th>
+              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 90 }}>직분</th>
+              <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 140 }}>비고</th>
+              <th style={{ padding: "11px 10px", borderBottom: `2px solid ${C.border}`, minWidth: 180 }}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={displayCols.length + 4} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
-              : filtered.map((r, i) => (
-                <tr key={r.id} style={{
-                  borderBottom: `1px solid ${C.border}`,
-                  border: selectedRowId === r.id ? `2px solid ${C.accent}` : undefined,
-                  backgroundColor: selectedIds.includes(r.id) ? C.accentLight : selectedRowId === r.id ? C.accentLight : "transparent",
-                }}>
-                  <td style={{ padding: "9px 6px", textAlign: "center" }}>
-                    <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
-                  </td>
-                  <td style={{ padding: "9px 6px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                  <td style={{ padding: "9px 6px", cursor: "pointer", fontWeight: 700, color: C.accent }} onClick={() => openEdit(r)}>{r.name}</td>
-                  {displayCols.map(c => (
-                    <td key={c.key} style={{ padding: "9px 6px" }}>{r[c.key] || <span style={{ color: C.border }}>–</span>}</td>
-                  ))}
-                  <td style={{ padding: "6px" }}>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      {selectedRowId === r.id && <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>}
-                      <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              ? <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
+              : filtered.map((r, i) => {
+                const isSelected = selectedRowId === r.id;
+                return (
+                  <tr key={r.id} onClick={() => selectRow(r)} style={{
+                    cursor: "pointer",
+                    backgroundColor: isSelected ? C.accentLight : selectedIds.includes(r.id) ? C.bg : (i % 2 === 1 ? "rgba(0,0,0,0.015)" : "transparent"),
+                    boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
+                  }}>
+                    <td style={{ padding: "10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
+                    </td>
+                    <td style={{ padding: "10px", textAlign: "center", color: C.muted, fontWeight: 600, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{i + 1}</td>
+                    <td style={{ padding: "10px", fontWeight: 700, color: isSelected ? C.accent : C.ink, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.name}</td>
+                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.phone || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.position || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "10px", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        {isSelected && (
+                          <>
+                            <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => openEdit(r)}>✏️ 정보수정</button>
+                            <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
+                          </>
+                        )}
+                        <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
@@ -894,6 +859,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   const sortList = (list) => {
     if (sortMode === "priceHigh") return [...list].sort((a, b) => b.totalPrice - a.totalPrice);
     if (sortMode === "priceLow") return [...list].sort((a, b) => a.totalPrice - b.totalPrice);
+    if (sortMode === "nameAsc") return [...list].sort((a, b) => a.memberName.localeCompare(b.memberName, "ko"));
     return [...list].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   };
   const filtered = sortList(byStatus);
@@ -994,7 +960,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
           </div>
 
           <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-            {[{ id: "none", label: "기본순" }, { id: "priceHigh", label: "금액 높은순" }, { id: "priceLow", label: "금액 낮은순" }].map(s => (
+            {[{ id: "none", label: "기본순" }, { id: "priceHigh", label: "금액 높은순" }, { id: "priceLow", label: "금액 낮은순" }, { id: "nameAsc", label: "이름 가나다순" }].map(s => (
               <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.navy : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
             ))}
           </div>
@@ -1005,22 +971,22 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
               : filtered.map(o => (
                 <div key={o.id} style={S.card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", cursor: "pointer", flexWrap: "wrap", gap: 8 }} onClick={() => setExpanded(expanded === o.id ? null : o.id)}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: 800, fontSize: 16 }}>{o.memberName}</span>
-                        <button
-                          onClick={e => { e.stopPropagation(); togglePaid(o.id); }}
-                          style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, display: "flex", alignItems: "center", gap: 4 }}
-                          title="클릭해서 입금 상태 전환"
-                        >
-                          {o.paid ? "✓ 입금완료" : "○ 미입금"}
-                        </button>
-                        <span style={{ fontSize: 12, color: C.muted }}>{fmtDate(o.date)}</span>
-                      </div>
-                      <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{o.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
-                      {roundFilter === "전체" && <div style={{ fontSize: 11, color: C.accent, marginTop: 2 }}>{roundName(o.roundId)}</div>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{o.memberName}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); togglePaid(o.id); }}
+                        style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+                        title="클릭해서 입금 상태 전환"
+                      >
+                        {o.paid ? "✓ 입금완료" : "○ 미입금"}
+                      </button>
+                      <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{fmtDate(o.date)}</span>
+                      <span style={{ fontSize: 13, color: C.ink, fontWeight: 600, paddingLeft: 8, borderLeft: `2px solid ${C.border}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                        {o.items.map(i => `${i.name} ${i.qty}개`).join(", ")}
+                      </span>
+                      {roundFilter === "전체" && <span style={{ fontSize: 11, color: C.accent, flexShrink: 0 }}>· {roundName(o.roundId)}</span>}
                     </div>
-                    <div style={{ textAlign: "right" }}>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontSize: 18, fontWeight: 900, color: C.accent }}>{won(o.totalPrice)}</div>
                       <div style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>마진 {won(o.totalMargin)}</div>
                       {!o.paid && o.paidAmount > 0 && <div style={{ fontSize: 11, color: C.red }}>미수 {won(o.totalPrice - o.paidAmount)}</div>}
@@ -1075,8 +1041,9 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
             ))}
           </div>
 
-          {aggTab === "product" && (
-            <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
+          {[...(aggTab === "product" ? ["product", "member"] : ["member", "product"])].map(section => section === "product" ? (
+            <div key="product" style={{ ...S.card, padding: 0, overflow: "auto", marginBottom: 16 }}>
+              <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>📦 물품별</div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 500 : 600 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
@@ -1109,10 +1076,9 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                 )}
               </table>
             </div>
-          )}
-
-          {aggTab === "member" && (
-            <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
+          ) : (
+            <div key="member" style={{ ...S.card, padding: 0, overflow: "auto", marginBottom: 16 }}>
+              <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>👤 인원별</div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 540 : 660 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
@@ -1148,7 +1114,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                 )}
               </table>
             </div>
-          )}
+          ))}
         </>
       )}
     </div>
