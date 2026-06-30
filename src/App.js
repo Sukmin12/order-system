@@ -275,6 +275,15 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     });
   };
 
+  // 🤖 저장만 수행 (폼은 닫지 않음) — 이전/다음 이동 시 자동저장에 사용
+  const persistMember = (data) => {
+    if (!data.name) return members;
+    const cleaned = { ...data, note: data.note.trim() || "회원" };
+    const u = sortByName(members.map(m => m.id === editing ? { ...cleaned, id: editing } : m));
+    setMembers(u); save("order-members", u);
+    return u;
+  };
+
   const saveMember = () => {
     if (!form.name) return;
     const data = { ...form, note: form.note.trim() || "회원" };
@@ -321,10 +330,18 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const memberTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
   const memberTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
 
-  // 🤖 현재 정렬된 목록 기준으로 이전/다음 회원 이동
+  // 🤖 현재 정렬된 목록 기준으로 이전/다음 회원 이동 — 이동 전 자동 저장
   const currentIndex = editing ? filtered.findIndex(m => m.id === editing) : -1;
-  const goPrev = () => { if (currentIndex > 0) startEdit(filtered[currentIndex - 1]); };
-  const goNext = () => { if (currentIndex >= 0 && currentIndex < filtered.length - 1) startEdit(filtered[currentIndex + 1]); };
+  const goPrev = () => {
+    if (currentIndex <= 0) return;
+    persistMember(form);
+    startEdit(filtered[currentIndex - 1]);
+  };
+  const goNext = () => {
+    if (currentIndex < 0 || currentIndex >= filtered.length - 1) return;
+    persistMember(form);
+    startEdit(filtered[currentIndex + 1]);
+  };
 
   const sortOptions = [
     { id: "position", label: "직분 우선순" },
@@ -354,14 +371,14 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: 17 }}>{form.name} 정보</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button onClick={goPrev} disabled={currentIndex <= 0}
-                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex <= 0 ? C.border : C.ink, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: currentIndex <= 0 ? "default" : "pointer", fontFamily: "inherit" }}>
-                    ← 이전
+                  <button onClick={goPrev} disabled={currentIndex <= 0} title="이전 회원"
+                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex <= 0 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: currentIndex <= 0 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    ←
                   </button>
                   <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{currentIndex + 1} / {filtered.length}</span>
-                  <button onClick={goNext} disabled={currentIndex >= filtered.length - 1}
-                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex >= filtered.length - 1 ? C.border : C.ink, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: currentIndex >= filtered.length - 1 ? "default" : "pointer", fontFamily: "inherit" }}>
-                    다음 →
+                  <button onClick={goNext} disabled={currentIndex >= filtered.length - 1} title="다음 회원"
+                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex >= filtered.length - 1 ? C.border : C.ink, width: 34, height: 34, borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: currentIndex >= filtered.length - 1 ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    →
                   </button>
                   <button onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}
                     style={{ border: "none", backgroundColor: C.surface, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
