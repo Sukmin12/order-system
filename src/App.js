@@ -223,7 +223,7 @@ function MemberManager({ members, setMembers, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  주문 입력 (장바구니식)
 // ════════════════════════════════════════════════════════════════════
-function OrderEntry({ members, products, orders, setOrders, w }) {
+function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   const mob = isMob(w);
   const [memberId, setMemberId] = useState("");
   const [items, setItems] = useState([]);
@@ -250,11 +250,13 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
   const totalMargin = totalPrice - totalCost;
 
   // 🤖 "주문" 누르면 즉시 주문 리스트에 추가되고, 입력창은 다음 사람 받을 준비로 초기화
+  // 🤖 현재 진행 중인 차수(currentRound)에 자동으로 귀속됨
   const submitOrder = () => {
     if (!memberId || items.length === 0) return;
     const member = members.find(m => m.id === Number(memberId));
     const newOrder = {
       id: Date.now(),
+      roundId: currentRound?.id || null,
       memberId: Number(memberId),
       memberName: member.name,
       items,
@@ -272,6 +274,15 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
 
   return (
     <div>
+      {currentRound ? (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: C.accentLight, color: C.accent, fontSize: 12, fontWeight: 800, padding: "6px 14px", borderRadius: 20, marginBottom: 14 }}>
+          🗓 진행 중 · {currentRound.name}
+        </div>
+      ) : (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, fontSize: 12, fontWeight: 800, padding: "6px 14px", borderRadius: 20, marginBottom: 14 }}>
+          ⚠️ 진행 중인 차수가 없어요 · 차수 관리에서 새 차수를 시작해주세요
+        </div>
+      )}
       <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 추가한 뒤 주문 버튼을 누르면 주문 리스트에 바로 등록돼요" w={w} />
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1fr 360px", gap: 16 }}>
@@ -350,9 +361,10 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  주문 리스트 (+ 입금관리)
 // ════════════════════════════════════════════════════════════════════
-function OrderList({ orders, setOrders, w }) {
+function OrderList({ orders, setOrders, rounds, w }) {
   const mob = isMob(w);
   const [filter, setFilter] = useState("전체");
+  const [roundFilter, setRoundFilter] = useState("전체");
   const [expanded, setExpanded] = useState(null);
 
   const togglePaid = (id) => {
@@ -365,14 +377,30 @@ function OrderList({ orders, setOrders, w }) {
   };
   const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); save("order-orders", u); };
 
-  const filtered = orders.filter(o => filter === "전체" ? true : filter === "입금완료" ? o.paid : !o.paid);
-  const totalPrice = orders.reduce((s, o) => s + o.totalPrice, 0);
-  const totalPaid = orders.reduce((s, o) => s + (o.paidAmount || 0), 0);
+  const roundOptions = ["전체", ...rounds.map(r => r.name)];
+  const byRound = orders.filter(o => {
+    if (roundFilter === "전체") return true;
+    const r = rounds.find(rr => rr.name === roundFilter);
+    return r && o.roundId === r.id;
+  });
+  const filtered = byRound.filter(o => filter === "전체" ? true : filter === "입금완료" ? o.paid : !o.paid);
+  const totalPrice = byRound.reduce((s, o) => s + o.totalPrice, 0);
+  const totalPaid = byRound.reduce((s, o) => s + (o.paidAmount || 0), 0);
   const totalUnpaid = totalPrice - totalPaid;
+
+  const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
 
   return (
     <div>
       <Title eyebrow="Orders" title="주문 리스트" sub={`전체 ${orders.length}건`} w={w} />
+
+      {/* 차수 필터 */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={S.label}>차수 선택</label>
+        <select style={{ ...S.select, maxWidth: mob ? "100%" : 280 }} value={roundFilter} onChange={e => setRoundFilter(e.target.value)}>
+          {roundOptions.map(r => <option key={r}>{r}</option>)}
+        </select>
+      </div>
 
       {/* 요약 */}
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr 1fr" : "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
@@ -413,6 +441,7 @@ function OrderList({ orders, setOrders, w }) {
                     <span style={{ fontSize: 12, color: C.muted }}>{fmtDate(o.date)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{o.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
+                  {roundFilter === "전체" && <div style={{ fontSize: 11, color: C.accent, marginTop: 2 }}>{roundName(o.roundId)}</div>}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 18, fontWeight: 900, color: C.accent }}>{won(o.totalPrice)}</div>
@@ -459,13 +488,21 @@ function OrderList({ orders, setOrders, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  보고서 (물품별 / 인원별 자동 집계)
 // ════════════════════════════════════════════════════════════════════
-function ReportPage({ orders, w }) {
+function ReportPage({ orders, rounds, w }) {
   const mob = isMob(w);
   const [tab, setTab] = useState("product");
+  const [roundFilter, setRoundFilter] = useState("전체");
+
+  const roundOptions = ["전체", ...rounds.map(r => r.name)];
+  const scoped = orders.filter(o => {
+    if (roundFilter === "전체") return true;
+    const r = rounds.find(rr => rr.name === roundFilter);
+    return r && o.roundId === r.id;
+  });
 
   // 🤖 물품별 자동 집계
   const productAgg = {};
-  orders.forEach(o => o.items.forEach(it => {
+  scoped.forEach(o => o.items.forEach(it => {
     if (!productAgg[it.name]) productAgg[it.name] = { name: it.name, qty: 0, cost: 0, price: 0, margin: 0 };
     productAgg[it.name].qty += it.qty;
     productAgg[it.name].cost += it.cost * it.qty;
@@ -476,7 +513,7 @@ function ReportPage({ orders, w }) {
 
   // 🤖 인원별 자동 집계
   const memberAgg = {};
-  orders.forEach(o => {
+  scoped.forEach(o => {
     if (!memberAgg[o.memberName]) memberAgg[o.memberName] = { name: o.memberName, qty: 0, cost: 0, price: 0, margin: 0, paid: 0 };
     memberAgg[o.memberName].qty += o.items.reduce((s, i) => s + i.qty, 0);
     memberAgg[o.memberName].cost += o.totalCost;
@@ -487,15 +524,15 @@ function ReportPage({ orders, w }) {
   const memberList = Object.values(memberAgg).sort((a, b) => b.price - a.price);
 
   const grandTotal = {
-    qty: orders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0),
-    cost: orders.reduce((s, o) => s + o.totalCost, 0),
-    price: orders.reduce((s, o) => s + o.totalPrice, 0),
-    margin: orders.reduce((s, o) => s + o.totalMargin, 0),
-    paid: orders.reduce((s, o) => s + (o.paidAmount || 0), 0),
+    qty: scoped.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0),
+    cost: scoped.reduce((s, o) => s + o.totalCost, 0),
+    price: scoped.reduce((s, o) => s + o.totalPrice, 0),
+    margin: scoped.reduce((s, o) => s + o.totalMargin, 0),
+    paid: scoped.reduce((s, o) => s + (o.paidAmount || 0), 0),
   };
 
   const copyReport = () => {
-    let text = `📦 로이스6 사업물품 주문 보고서 (${fmtDate(todayStr())})\n\n`;
+    let text = `📦 로이스6 사업물품 주문 보고서 (${roundFilter === "전체" ? "전체 기간" : roundFilter})\n\n`;
     text += `■ 물품별 집계\n`;
     productList.forEach(p => { text += `- ${p.name}: ${p.qty}개 / 매출 ${won(p.price)} / 마진 ${won(p.margin)}\n`; });
     text += `\n■ 인원별 집계\n`;
@@ -507,8 +544,15 @@ function ReportPage({ orders, w }) {
 
   return (
     <div>
-      <Title eyebrow="Report" title="보고서" sub="실시간 자동 집계" w={w}
+      <Title eyebrow="Report" title="보고서" sub={roundFilter === "전체" ? "전체 기간 자동 집계" : `${roundFilter} 자동 집계`} w={w}
         action={<button style={S.btn(C.navy)} onClick={copyReport}>📋 보고서 복사</button>} />
+
+      <div style={{ marginBottom: 18 }}>
+        <label style={S.label}>차수 선택</label>
+        <select style={{ ...S.select, maxWidth: mob ? "100%" : 280 }} value={roundFilter} onChange={e => setRoundFilter(e.target.value)}>
+          {roundOptions.map(r => <option key={r}>{r}</option>)}
+        </select>
+      </div>
 
       {/* 총계 카드 */}
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr 1fr" : "repeat(5,1fr)", gap: 10, marginBottom: 20 }}>
@@ -611,6 +655,164 @@ function ReportPage({ orders, w }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  차수 관리 (+ 과거 주문 수동 입력)
+// ════════════════════════════════════════════════════════════════════
+function RoundManager({ rounds, setRounds, orders, setOrders, members, products, w }) {
+  const mob = isMob(w);
+  const [newRoundName, setNewRoundName] = useState("");
+  const [pastOpen, setPastOpen] = useState(null); // round id currently adding past data to
+  const [memberId, setMemberId] = useState("");
+  const [items, setItems] = useState([]);
+  const [pickProduct, setPickProduct] = useState("");
+  const [pickQty, setPickQty] = useState(1);
+  const [pastDate, setPastDate] = useState(todayStr());
+  const [paid, setPaid] = useState(false);
+  const [paidAmount, setPaidAmount] = useState(0);
+
+  const startRound = () => {
+    if (!newRoundName.trim()) return;
+    const u = [...rounds.map(r => ({ ...r, active: false })), { id: Date.now(), name: newRoundName.trim(), active: true, createdAt: todayStr() }];
+    setRounds(u); save("order-rounds", u);
+    setNewRoundName("");
+  };
+
+  const removeRound = (id) => {
+    if (!window.confirm("이 차수를 삭제할까요? 차수에 속한 주문은 '차수 미지정'으로 남아요.")) return;
+    const u = rounds.filter(r => r.id !== id);
+    setRounds(u); save("order-rounds", u);
+  };
+
+  const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
+
+  // 과거 데이터 입력용 장바구니
+  const addItem = () => {
+    if (!pickProduct) return;
+    const product = products.find(p => p.id === Number(pickProduct));
+    if (!product) return;
+    const existing = items.find(c => c.productId === product.id);
+    if (existing) setItems(items.map(c => c.productId === product.id ? { ...c, qty: c.qty + Number(pickQty) } : c));
+    else setItems([...items, { productId: product.id, name: product.name, cost: Number(product.cost) || 0, price: Number(product.price) || 0, qty: Number(pickQty) }]);
+    setPickProduct(""); setPickQty(1);
+  };
+  const removeItem = (productId) => setItems(items.filter(c => c.productId !== productId));
+  const totalPrice = items.reduce((s, c) => s + c.price * c.qty, 0);
+  const totalCost = items.reduce((s, c) => s + c.cost * c.qty, 0);
+
+  const submitPastOrder = (roundId) => {
+    if (!memberId || items.length === 0) return;
+    const member = members.find(m => m.id === Number(memberId));
+    const newOrder = {
+      id: Date.now(),
+      roundId,
+      memberId: Number(memberId),
+      memberName: member.name,
+      items,
+      totalCost,
+      totalPrice,
+      totalMargin: totalPrice - totalCost,
+      paid,
+      paidAmount: paid ? totalPrice : Number(paidAmount),
+      date: pastDate,
+    };
+    const u = [...orders, newOrder];
+    setOrders(u); save("order-orders", u);
+    setItems([]); setMemberId(""); setPaid(false); setPaidAmount(0); setPastDate(todayStr());
+  };
+
+  const activeRound = rounds.find(r => r.active);
+
+  return (
+    <div>
+      <Title eyebrow="Rounds" title="차수 관리" sub="매 회차(예: 6월 4째주 주문)를 만들고, 지난 기록도 차수별로 입력할 수 있어요" w={w} />
+
+      {/* 새 차수 시작 */}
+      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
+        {activeRound && (
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 마감돼요</div>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: mob ? "wrap" : "nowrap" }}>
+          <input style={{ ...S.input, flex: 1 }} value={newRoundName} onChange={e => setNewRoundName(e.target.value)} placeholder="예: 6월 4째주 주문" onKeyDown={e => e.key === "Enter" && startRound()} />
+          <button style={{ ...S.btn(), flexShrink: 0 }} onClick={startRound}>새 차수 시작</button>
+        </div>
+      </div>
+
+      {/* 차수 목록 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {rounds.length === 0
+          ? <div style={{ ...S.card, textAlign: "center", color: C.muted }}>등록된 차수가 없습니다. 위에서 첫 차수를 시작해보세요.</div>
+          : rounds.slice().reverse().map(r => (
+            <div key={r.id} style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, fontSize: 16 }}>{r.name}</span>
+                  {r.active && <Badge text="진행 중" color={C.green} bg={C.greenLight} />}
+                  <span style={{ fontSize: 12, color: C.muted }}>주문 {orderCountOf(r.id)}건</span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button style={S.btnOutline} onClick={() => setPastOpen(pastOpen === r.id ? null : r.id)}>{pastOpen === r.id ? "닫기" : "+ 지난 주문 입력"}</button>
+                  <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>
+                </div>
+              </div>
+
+              {/* 지난 주문 수동 입력 폼 */}
+              {pastOpen === r.id && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+                  <Grid cols={3} w={w}>
+                    <Field label="주문자 (회원) *">
+                      <select style={S.select} value={memberId} onChange={e => setMemberId(e.target.value)}>
+                        <option value="">회원을 선택하세요</option>
+                        {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="주문 날짜"><input type="date" style={S.input} value={pastDate} onChange={e => setPastDate(e.target.value)} /></Field>
+                    <Field label="입금 여부">
+                      <select style={S.select} value={paid ? "완료" : "미입금"} onChange={e => setPaid(e.target.value === "완료")}>
+                        <option value="미입금">미입금</option>
+                        <option value="완료">입금완료</option>
+                      </select>
+                    </Field>
+                  </Grid>
+                  <Grid cols={3} w={w}>
+                    <div style={{ gridColumn: mob ? "auto" : "span 2" }}>
+                      <label style={S.label}>물품 선택</label>
+                      <select style={S.select} value={pickProduct} onChange={e => setPickProduct(e.target.value)}>
+                        <option value="">물품을 선택하세요</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.name} — {won(p.price)}</option>)}
+                      </select>
+                    </div>
+                    <Field label="수량"><input style={S.input} type="number" min="1" value={pickQty} onChange={e => setPickQty(e.target.value)} /></Field>
+                  </Grid>
+                  <button style={{ ...S.btn(C.navy), marginBottom: 14 }} onClick={addItem}>+ 물품 추가</button>
+
+                  {items.length > 0 && (
+                    <div style={{ backgroundColor: C.bg, borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                      {items.map(c => (
+                        <div key={c.productId} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                          <span>{c.name} × {c.qty}</span>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            <span style={{ fontWeight: 700 }}>{won(c.price * c.qty)}</span>
+                            <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeItem(c.productId)}>삭제</button>
+                          </div>
+                        </div>
+                      ))}
+                      <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
+                        <span>합계</span><span style={{ color: C.accent }}>{won(totalPrice)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button style={{ ...S.btn(), width: "100%" }} onClick={() => submitPastOrder(r.id)} disabled={!memberId || items.length === 0}>이 차수에 주문 등록</button>
+                </div>
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  앱 루트
 // ════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -622,11 +824,14 @@ export default function App() {
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
+  const [rounds, setRounds] = useState(() => load("order-rounds", []));
+  const currentRound = rounds.find(r => r.active) || null;
 
   const nav = [
     { id: "entry", label: "주문 입력", icon: "🛒" },
     { id: "orders", label: "주문 리스트", icon: "📋" },
     { id: "report", label: "보고서", icon: "📊" },
+    { id: "rounds", label: "차수 관리", icon: "🗓" },
     { id: "products", label: "물품 관리", icon: "📦" },
     { id: "members", label: "회원 관리", icon: "👤" },
   ];
@@ -634,9 +839,10 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} w={w} />;
-      case "orders": return <OrderList orders={orders} setOrders={setOrders} w={w} />;
-      case "report": return <ReportPage orders={orders} w={w} />;
+      case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} currentRound={currentRound} w={w} />;
+      case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} w={w} />;
+      case "report": return <ReportPage orders={orders} rounds={rounds} w={w} />;
+      case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} setOrders={setOrders} members={members} products={products} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} w={w} />;
       case "members": return <MemberManager members={members} setMembers={setMembers} w={w} />;
       default: return null;
@@ -665,12 +871,16 @@ export default function App() {
           )}
           <div style={{ padding: "16px 14px", paddingBottom: 80 }}>{renderPage()}</div>
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100 }}>
-            {nav.map(n => (
+            {nav.slice(0, 4).map(n => (
               <button key={n.id} onClick={() => goTo(n.id)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "8px 2px 6px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                 <span style={{ fontSize: 19 }}>{n.icon}</span>
                 <span style={{ fontSize: 9, fontWeight: page === n.id ? 700 : 400, color: page === n.id ? C.accent : C.muted }}>{n.label}</span>
               </button>
             ))}
+            <button onClick={() => setMenuOpen(true)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "8px 2px 6px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <span style={{ fontSize: 19 }}>•••</span>
+              <span style={{ fontSize: 9, color: C.muted }}>더보기</span>
+            </button>
           </div>
         </>
       ) : (
