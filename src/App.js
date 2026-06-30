@@ -156,35 +156,44 @@ function ProductManager({ products, setProducts, w }) {
 function MemberManager({ members, setMembers, w }) {
   const mob = isMob(w);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
   const blank = { name: "", phone: "", note: "" };
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
 
-  const add = () => {
+  const saveMember = () => {
     if (!form.name) return;
-    const u = [...members, { ...form, id: Date.now() }];
+    let u;
+    if (editing) {
+      u = members.map(m => m.id === editing ? { ...form, id: editing } : m);
+      setEditing(null);
+    } else {
+      u = [...members, { ...form, id: Date.now() }];
+    }
     setMembers(u); save("order-members", u);
     setForm(blank); setAdding(false);
   };
-  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); };
+  const startEdit = (m) => { setForm({ name: m.name, phone: m.phone, note: m.note }); setEditing(m.id); setAdding(true); };
+  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
   const filtered = members.filter(m => m.name.includes(search));
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 관리" sub={`등록된 회원 ${members.length}명`} w={w}
-        action={<button style={S.btn()} onClick={() => setAdding(!adding)}>+ 회원 추가</button>} />
+      <Title eyebrow="Members" title="회원 관리" sub={`등록된 회원 ${members.length}명 · 회원 카드를 클릭하면 수정할 수 있어요`} w={w}
+        action={<button style={S.btn()} onClick={() => { setForm(blank); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
 
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
+          <div style={{ fontWeight: 800, marginBottom: 14 }}>{editing ? "회원 정보 수정" : "새 회원 등록"}</div>
           <Grid cols={3} w={w}>
             <Field label="이름 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="홍길동" /></Field>
             <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
             <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
           </Grid>
           <div style={{ display: "flex", gap: 8 }}>
-            <button style={S.btn()} onClick={add}>저장</button>
-            <button style={S.btnGhost} onClick={() => setAdding(false)}>취소</button>
+            <button style={S.btn()} onClick={saveMember}>{editing ? "수정 저장" : "저장"}</button>
+            <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>취소</button>
           </div>
         </div>
       )}
@@ -195,14 +204,14 @@ function MemberManager({ members, setMembers, w }) {
         {filtered.length === 0
           ? <div style={{ ...S.card, gridColumn: "1/-1", textAlign: "center", color: C.muted }}>등록된 회원이 없습니다</div>
           : filtered.map(m => (
-            <div key={m.id} style={{ ...S.card, padding: 14 }}>
+            <div key={m.id} style={{ ...S.card, padding: 14, cursor: "pointer" }} onClick={() => startEdit(m)}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 15 }}>{m.name}</div>
                   {m.phone && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{m.phone}</div>}
                   {m.note && <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>{m.note}</div>}
                 </div>
-                <button style={{ ...S.btn(C.red), padding: "4px 9px", fontSize: 10 }} onClick={() => remove(m.id)}>삭제</button>
+                <button style={{ ...S.btn(C.red), padding: "4px 9px", fontSize: 10 }} onClick={e => { e.stopPropagation(); remove(m.id); }}>삭제</button>
               </div>
             </div>
           ))}
@@ -217,53 +226,53 @@ function MemberManager({ members, setMembers, w }) {
 function OrderEntry({ members, products, orders, setOrders, w }) {
   const mob = isMob(w);
   const [memberId, setMemberId] = useState("");
-  const [cart, setCart] = useState([]);
+  const [items, setItems] = useState([]);
   const [pickProduct, setPickProduct] = useState("");
   const [pickQty, setPickQty] = useState(1);
 
-  const addToCart = () => {
+  const addItem = () => {
     if (!pickProduct) return;
     const product = products.find(p => p.id === Number(pickProduct));
     if (!product) return;
-    const existing = cart.find(c => c.productId === product.id);
+    const existing = items.find(c => c.productId === product.id);
     if (existing) {
-      setCart(cart.map(c => c.productId === product.id ? { ...c, qty: c.qty + Number(pickQty) } : c));
+      setItems(items.map(c => c.productId === product.id ? { ...c, qty: c.qty + Number(pickQty) } : c));
     } else {
-      setCart([...cart, { productId: product.id, name: product.name, cost: Number(product.cost) || 0, price: Number(product.price) || 0, qty: Number(pickQty) }]);
+      setItems([...items, { productId: product.id, name: product.name, cost: Number(product.cost) || 0, price: Number(product.price) || 0, qty: Number(pickQty) }]);
     }
     setPickProduct(""); setPickQty(1);
   };
-  const removeFromCart = (productId) => setCart(cart.filter(c => c.productId !== productId));
-  const updateQty = (productId, qty) => setCart(cart.map(c => c.productId === productId ? { ...c, qty: Math.max(1, Number(qty)) } : c));
+  const removeItem = (productId) => setItems(items.filter(c => c.productId !== productId));
+  const updateQty = (productId, qty) => setItems(items.map(c => c.productId === productId ? { ...c, qty: Math.max(1, Number(qty)) } : c));
 
-  const cartTotalCost = cart.reduce((s, c) => s + c.cost * c.qty, 0);
-  const cartTotalPrice = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const cartTotalMargin = cartTotalPrice - cartTotalCost;
+  const totalCost = items.reduce((s, c) => s + c.cost * c.qty, 0);
+  const totalPrice = items.reduce((s, c) => s + c.price * c.qty, 0);
+  const totalMargin = totalPrice - totalCost;
 
-  const confirmOrder = () => {
-    if (!memberId || cart.length === 0) return;
+  // 🤖 "주문" 누르면 즉시 주문 리스트에 추가되고, 입력창은 다음 사람 받을 준비로 초기화
+  const submitOrder = () => {
+    if (!memberId || items.length === 0) return;
     const member = members.find(m => m.id === Number(memberId));
     const newOrder = {
       id: Date.now(),
       memberId: Number(memberId),
       memberName: member.name,
-      items: cart,
-      totalCost: cartTotalCost,
-      totalPrice: cartTotalPrice,
-      totalMargin: cartTotalMargin,
+      items,
+      totalCost,
+      totalPrice,
+      totalMargin,
       paid: false,
       paidAmount: 0,
       date: todayStr(),
     };
     const u = [...orders, newOrder];
     setOrders(u); save("order-orders", u);
-    setCart([]); setMemberId("");
-    alert(`${member.name}님 주문이 등록되었습니다!`);
+    setItems([]); setMemberId("");
   };
 
   return (
     <div>
-      <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 담아주세요" w={w} />
+      <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 추가한 뒤 주문 버튼을 누르면 주문 리스트에 바로 등록돼요" w={w} />
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1fr 360px", gap: 16 }}>
         {/* 왼쪽: 입력 */}
@@ -278,7 +287,7 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
           </div>
 
           <div style={{ ...S.card, marginBottom: 14 }}>
-            <div style={{ fontWeight: 800, marginBottom: 14 }}>물품 담기</div>
+            <div style={{ fontWeight: 800, marginBottom: 14 }}>물품 추가</div>
             <Grid cols={3} w={w}>
               <div style={{ gridColumn: mob ? "auto" : "span 2" }}>
                 <label style={S.label}>물품 선택</label>
@@ -289,27 +298,27 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
               </div>
               <Field label="수량"><input style={S.input} type="number" min="1" value={pickQty} onChange={e => setPickQty(e.target.value)} /></Field>
             </Grid>
-            <button style={S.btn(C.navy)} onClick={addToCart}>🛒 장바구니에 담기</button>
+            <button style={S.btn(C.navy)} onClick={addItem}>+ 물품 추가</button>
           </div>
 
-          {/* 장바구니 */}
+          {/* 담긴 물품 */}
           <div style={S.card}>
-            <div style={{ fontWeight: 800, marginBottom: 14 }}>담은 물품 ({cart.length})</div>
-            {cart.length === 0
-              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>아직 담은 물품이 없습니다</div>
-              : cart.map(c => (
+            <div style={{ fontWeight: 800, marginBottom: 14 }}>주문 물품 ({items.length})</div>
+            {items.length === 0
+              ? <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: "30px 0" }}>아직 추가한 물품이 없습니다</div>
+              : items.map(c => (
                 <div key={c.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}`, flexWrap: mob ? "wrap" : "nowrap" }}>
                   <span style={{ flex: 1, fontWeight: 600, fontSize: 14, minWidth: 100 }}>{c.name}</span>
                   <input type="number" min="1" value={c.qty} onChange={e => updateQty(c.productId, e.target.value)} style={{ ...S.input, width: 60, padding: "6px 8px", textAlign: "center" }} />
                   <span style={{ fontSize: 13, color: C.muted, width: 36 }}>개</span>
                   <span style={{ fontWeight: 700, fontSize: 14, width: 90, textAlign: "right" }}>{won(c.price * c.qty)}</span>
-                  <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => removeFromCart(c.productId)}>삭제</button>
+                  <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => removeItem(c.productId)}>삭제</button>
                 </div>
               ))}
           </div>
         </div>
 
-        {/* 오른쪽: 요약 */}
+        {/* 오른쪽: 요약 + 주문 버튼 */}
         <div>
           <div style={{ ...S.card, position: mob ? "static" : "sticky", top: 16 }}>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>주문 요약</div>
@@ -317,19 +326,20 @@ function OrderEntry({ members, products, orders, setOrders, w }) {
               <span style={{ color: C.muted }}>주문자</span><span style={{ fontWeight: 700 }}>{members.find(m => m.id === Number(memberId))?.name || "-"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>총 개수</span><span style={{ fontWeight: 700 }}>{cart.reduce((s, c) => s + c.qty, 0)}개</span>
+              <span style={{ color: C.muted }}>총 개수</span><span style={{ fontWeight: 700 }}>{items.reduce((s, c) => s + c.qty, 0)}개</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>총 매입가</span><span>{won(cartTotalCost)}</span>
+              <span style={{ color: C.muted }}>총 매입가</span><span>{won(totalCost)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.muted }}>예상 마진</span><span style={{ color: C.green, fontWeight: 700 }}>{won(cartTotalMargin)}</span>
+              <span style={{ color: C.muted }}>예상 마진</span><span style={{ color: C.green, fontWeight: 700 }}>{won(totalMargin)}</span>
             </div>
             <div style={{ backgroundColor: C.accentLight, borderRadius: 10, padding: 14, margin: "14px 0", textAlign: "center" }}>
               <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 4 }}>받아야 할 금액</div>
-              <div style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{won(cartTotalPrice)}</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{won(totalPrice)}</div>
             </div>
-            <button style={{ ...S.btn(), width: "100%", padding: "13px", fontSize: 14 }} onClick={confirmOrder} disabled={!memberId || cart.length === 0}>주문 확정하기</button>
+            <button style={{ ...S.btn(), width: "100%", padding: "13px", fontSize: 14 }} onClick={submitOrder} disabled={!memberId || items.length === 0}>주문</button>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 8, textAlign: "center" }}>누르면 바로 주문 리스트에 추가돼요</div>
           </div>
         </div>
       </div>
@@ -600,7 +610,8 @@ function ReportPage({ orders, w }) {
 export default function App() {
   const w = useWidth();
   const mob = isMob(w);
-  const [page, setPage] = useState("entry");
+  const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
+  const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
   const [menuOpen, setMenuOpen] = useState(false);
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
