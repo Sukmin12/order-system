@@ -1457,7 +1457,21 @@ function QuarterlyReport({ orders, rounds, w }) {
   const [endMonth, setEndMonth] = useState(defaultStart + 2);
 
   const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
-  const weekRoundNo = (week) => weekOptions.indexOf(week) + 1;
+  const weekRoundNo = (week) => { const i = weekOptions.indexOf(week); return i >= 0 ? i + 1 : 0; };
+
+  // 🤖 차수에 연도/월/주차 정보가 비어있으면(구글시트 동기화 등으로 누락된 경우) 차수 이름("2026년 3월 셋째주")에서 복구
+  const parseRoundMeta = (r) => {
+    let y = r.year, m = r.month, wk = r.week;
+    if (!y || !m || !wk) {
+      const match = (r.name || "").match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(.+)/);
+      if (match) {
+        if (!y) y = Number(match[1]);
+        if (!m) m = Number(match[2]);
+        if (!wk) wk = match[3].trim();
+      }
+    }
+    return { year: y || null, month: m || null, week: wk || "" };
+  };
 
   const quarterPresets = [
     { label: "1분기 (1~3월)", start: 1, end: 3 },
@@ -1466,20 +1480,21 @@ function QuarterlyReport({ orders, rounds, w }) {
     { label: "4분기 (10~12월)", start: 10, end: 12 },
   ];
 
-  // 🤖 연도/월 정보가 있는 차수만 대상으로, 선택한 기간에 속한 차수를 월별로 묶음
-  const roundsInRange = rounds
-    .filter(r => r.year === year && r.month >= startMonth && r.month <= endMonth)
+  // 🤖 선택한 기간에 속한 차수를 월별로 묶음 (연도/월 정보를 이름에서도 복구해서 매칭)
+  const roundsWithMeta = rounds.map(r => ({ ...r, _meta: parseRoundMeta(r) }));
+  const roundsInRange = roundsWithMeta
+    .filter(r => r._meta.year === year && r._meta.month >= startMonth && r._meta.month <= endMonth)
     .slice()
-    .sort((a, b) => (a.month - b.month) || (weekRoundNo(a.week) - weekRoundNo(b.week)));
+    .sort((a, b) => (a._meta.month - b._meta.month) || (weekRoundNo(a._meta.week) - weekRoundNo(b._meta.week)));
 
   const monthGroups = [];
   roundsInRange.forEach(r => {
-    let g = monthGroups.find(m => m.month === r.month);
-    if (!g) { g = { month: r.month, rounds: [] }; monthGroups.push(g); }
+    let g = monthGroups.find(m => m.month === r._meta.month);
+    if (!g) { g = { month: r._meta.month, rounds: [] }; monthGroups.push(g); }
     g.rounds.push(r);
   });
 
-  // 각 차수별 물품 집계(수량/단가/금액)
+  // 각 차수별 물품 집계(수량/단가/금액) + 주차 소계
   const buildRoundItems = (round) => {
     const agg = {};
     orders.filter(o => o.roundId === round.id).forEach(o => o.items.forEach(it => {
@@ -1505,8 +1520,9 @@ function QuarterlyReport({ orders, rounds, w }) {
     const rowsOut = [["월구분", "품명", "수량", "단가", "금액"]];
     monthGroups.forEach(g => {
       g.roundData.forEach(rd => {
-        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round.week)}차(${rd.round.week})`, "", "", ""]);
+        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})`, "", "", ""]);
         rd.items.forEach(it => rowsOut.push(["", it.name, it.qty, Math.round(it.total / it.qty), it.total]));
+        rowsOut.push([`${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week}) 소계`, "", "", "", rd.subtotal]);
       });
       rowsOut.push([`${g.month}월 합계`, "", "", "", g.monthTotal]);
     });
@@ -1532,8 +1548,9 @@ function QuarterlyReport({ orders, rounds, w }) {
     monthGroups.forEach(g => {
       text += `■ ${g.month}월\n`;
       g.roundData.forEach(rd => {
-        text += `  [${weekRoundNo(rd.round.week)}차(${rd.round.week})]\n`;
+        text += `  [${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})]\n`;
         rd.items.forEach(it => { text += `   - ${it.name} ${it.qty}개 : ${won(it.total)}\n`; });
+        text += `   소계: ${won(rd.subtotal)}\n`;
       });
       text += `  ${g.month}월 합계: ${won(g.monthTotal)}\n\n`;
     });
@@ -1588,7 +1605,7 @@ function QuarterlyReport({ orders, rounds, w }) {
       </div>
 
       {monthGroups.length === 0 ? (
-        <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>이 기간에 연도/월 정보가 있는 차수가 없습니다. 차수 관리에서 연도/월/주차를 지정해 만든 차수만 집계돼요.</div>
+        <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>이 기간에 해당하는 차수가 없습니다. 연도/월을 다시 확인해보거나, 차수 이름이 "2026년 3월 첫째주"처럼 연도/월이 포함된 형식인지 확인해주세요.</div>
       ) : (
         <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
@@ -1601,7 +1618,7 @@ function QuarterlyReport({ orders, rounds, w }) {
             </thead>
             <tbody>
               {monthGroups.map(g => {
-                const monthRowSpan = g.roundData.reduce((s, rd) => s + 1 + rd.items.length, 0);
+                const monthRowSpan = g.roundData.reduce((s, rd) => s + 2 + (rd.items.length || 1), 0); // 헤더1 + 소계1 + 품목(없으면 안내문 1줄)
                 let monthCellUsed = false;
                 return (
                   <React.Fragment key={g.month}>
@@ -1611,9 +1628,11 @@ function QuarterlyReport({ orders, rounds, w }) {
                           {!monthCellUsed && (monthCellUsed = true) && (
                             <td rowSpan={monthRowSpan} style={{ padding: "10px", textAlign: "center", fontWeight: 800, color: C.accent, fontSize: 15, border: `1px solid ${C.border}`, backgroundColor: C.accentLight, verticalAlign: "middle" }}>{g.month}월</td>
                           )}
-                          <td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", fontWeight: 700, color: C.navy, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round.week)}차({rd.round.week})</td>
+                          <td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", fontWeight: 700, color: C.navy, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week})</td>
                         </tr>
-                        {rd.items.map((it, ii) => (
+                        {rd.items.length === 0 ? (
+                          <tr><td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
+                        ) : rd.items.map((it, ii) => (
                           <tr key={ii} style={{ backgroundColor: ii % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
                             <td style={{ padding: "9px 10px", border: `1px solid ${C.border}` }}>{it.name}</td>
                             <td style={{ padding: "9px 10px", textAlign: "center", border: `1px solid ${C.border}` }}>{it.qty}</td>
@@ -1621,9 +1640,10 @@ function QuarterlyReport({ orders, rounds, w }) {
                             <td style={{ padding: "9px 10px", textAlign: "right", border: `1px solid ${C.border}`, fontWeight: 700 }}>{won(it.total)}</td>
                           </tr>
                         ))}
-                        {rd.items.length === 0 && (
-                          <tr><td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
-                        )}
+                        <tr style={{ backgroundColor: C.greenLight }}>
+                          <td colSpan={3} style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, fontSize: 12.5, color: C.green, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week}) 소계</td>
+                          <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, fontSize: 12.5, color: C.green, border: `1px solid ${C.border}` }}>{won(rd.subtotal)}</td>
+                        </tr>
                       </React.Fragment>
                     ))}
                     <tr style={{ backgroundColor: C.bg }}>
