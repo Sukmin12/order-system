@@ -1122,18 +1122,25 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   });
   const memberList = sortAgg(Object.values(memberAgg));
 
-  // 🤖 물품별 → 구매한 사람 목록 / 인원별 → 구매한 물품 목록 (마우스오버용)
-  const [hoverProduct, setHoverProduct] = useState(null);
-  const [hoverMember, setHoverMember] = useState(null);
-  const productBuyers = {};
+  // 🤖 물품별 → 구매한 사람별 상세(수량/매입가/판매가/마진) / 인원별 → 구매한 물품별 가격 — 행 클릭으로 펼쳐서 봄
+  const [expandedProduct, setExpandedProduct] = useState(null);
+  const [expandedMember, setExpandedMember] = useState(null);
+  const productBuyerDetail = {};
   byRound.forEach(o => o.items.forEach(it => {
-    if (!productBuyers[it.name]) productBuyers[it.name] = {};
-    productBuyers[it.name][o.memberName] = (productBuyers[it.name][o.memberName] || 0) + it.qty;
+    if (!productBuyerDetail[it.name]) productBuyerDetail[it.name] = {};
+    const d = productBuyerDetail[it.name];
+    if (!d[o.memberName]) d[o.memberName] = { name: o.memberName, qty: 0, cost: 0, price: 0 };
+    d[o.memberName].qty += it.qty;
+    d[o.memberName].cost += it.cost * it.qty;
+    d[o.memberName].price += it.price * it.qty;
   }));
-  const memberItemsMap = {};
+  const memberItemDetail = {};
   byRound.forEach(o => o.items.forEach(it => {
-    if (!memberItemsMap[o.memberName]) memberItemsMap[o.memberName] = {};
-    memberItemsMap[o.memberName][it.name] = (memberItemsMap[o.memberName][it.name] || 0) + it.qty;
+    if (!memberItemDetail[o.memberName]) memberItemDetail[o.memberName] = {};
+    const d = memberItemDetail[o.memberName];
+    if (!d[it.name]) d[it.name] = { name: it.name, qty: 0, price: 0 };
+    d[it.name].qty += it.qty;
+    d[it.name].price += it.price * it.qty;
   }));
 
   const aggSortOptions = [
@@ -1315,25 +1322,46 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                 <tbody>
                   {productList.length === 0
                     ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
-                    : productList.map(p => (
-                      <tr key={p.name} style={{ borderBottom: `1px solid ${C.border}` }} onMouseEnter={() => setHoverProduct(p.name)} onMouseLeave={() => setHoverProduct(null)}>
-                        <td style={{ padding: "11px 14px", fontWeight: 700, position: "relative", cursor: "default" }}>
-                          {p.name}
-                          {hoverProduct === p.name && productBuyers[p.name] && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 80, marginTop: 4, backgroundColor: C.navy, color: "#fff", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", boxShadow: "0 8px 20px rgba(15,46,79,0.3)" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 11, opacity: 0.85 }}>구매자</div>
-                              {Object.entries(productBuyers[p.name]).sort((a, b) => b[1] - a[1]).map(([name, qty]) => (
-                                <div key={name}>{name} <span style={{ opacity: 0.75 }}>{qty}개</span></div>
-                              ))}
-                            </div>
+                    : productList.map(p => {
+                      const isOpen = expandedProduct === p.name;
+                      const buyers = Object.values(productBuyerDetail[p.name] || {}).sort((a, b) => b.qty - a.qty);
+                      return (
+                        <React.Fragment key={p.name}>
+                          <tr onClick={() => setExpandedProduct(isOpen ? null : p.name)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: isOpen ? C.accentLight : "transparent" }}>
+                            <td style={{ padding: "11px 14px", fontWeight: 700, color: isOpen ? C.accent : C.ink }}>{p.name}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right" }}>{p.qty}개</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", color: C.muted }}>{won(p.cost)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(p.price)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: C.green }}>{won(p.margin)}</td>
+                          </tr>
+                          {isOpen && (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                                <div style={{ padding: "12px 16px" }}>
+                                  <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 8 }}>구매자별 상세</div>
+                                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                                    <thead>
+                                      <tr>{["구매자","수량","매입가","판매가","마진"].map(h => <th key={h} style={{ textAlign: h === "구매자" ? "left" : "right", padding: "5px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr>
+                                    </thead>
+                                    <tbody>
+                                      {buyers.map(b => (
+                                        <tr key={b.name}>
+                                          <td style={{ padding: "5px 8px", fontWeight: 600 }}>{b.name}</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right" }}>{b.qty}개</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right", color: C.muted }}>{won(b.cost)}</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right" }}>{won(b.price)}</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won(b.price - b.cost)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td style={{ padding: "11px 14px", textAlign: "right" }}>{p.qty}개</td>
-                        <td style={{ padding: "11px 14px", textAlign: "right", color: C.muted }}>{won(p.cost)}</td>
-                        <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(p.price)}</td>
-                        <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: C.green }}>{won(p.margin)}</td>
-                      </tr>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                 </tbody>
                 {productList.length > 0 && (
                   <tfoot><tr style={{ backgroundColor: C.accentLight, fontWeight: 800 }}>
@@ -1362,24 +1390,41 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                     ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
                     : memberList.map(m => {
                       const unpaid = m.price - m.paid;
+                      const isOpen = expandedMember === m.name;
+                      const items = Object.values(memberItemDetail[m.name] || {}).sort((a, b) => b.price - a.price);
                       return (
-                        <tr key={m.name} style={{ borderBottom: `1px solid ${C.border}` }} onMouseEnter={() => setHoverMember(m.name)} onMouseLeave={() => setHoverMember(null)}>
-                          <td style={{ padding: "11px 14px", fontWeight: 700, position: "relative", cursor: "default" }}>
-                            {m.name}
-                            {hoverMember === m.name && memberItemsMap[m.name] && (
-                              <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 80, marginTop: 4, backgroundColor: C.navy, color: "#fff", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", boxShadow: "0 8px 20px rgba(15,46,79,0.3)" }}>
-                                <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 11, opacity: 0.85 }}>구매물품</div>
-                                {Object.entries(memberItemsMap[m.name]).sort((a, b) => b[1] - a[1]).map(([name, qty]) => (
-                                  <div key={name}>{name} <span style={{ opacity: 0.75 }}>{qty}개</span></div>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ padding: "11px 14px", textAlign: "right" }}>{m.qty}개</td>
-                          <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(m.price)}</td>
-                          <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(m.paid)}</td>
-                          <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: unpaid > 0 ? C.red : C.muted }}>{unpaid > 0 ? won(unpaid) : "-"}</td>
-                        </tr>
+                        <React.Fragment key={m.name}>
+                          <tr onClick={() => setExpandedMember(isOpen ? null : m.name)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: isOpen ? C.accentLight : "transparent" }}>
+                            <td style={{ padding: "11px 14px", fontWeight: 700, color: isOpen ? C.accent : C.ink }}>{m.name}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right" }}>{m.qty}개</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(m.price)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(m.paid)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: unpaid > 0 ? C.red : C.muted }}>{unpaid > 0 ? won(unpaid) : "-"}</td>
+                          </tr>
+                          {isOpen && (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                                <div style={{ padding: "12px 16px" }}>
+                                  <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 8 }}>구매물품 상세</div>
+                                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                                    <thead>
+                                      <tr>{["물품","수량","가격"].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "5px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr>
+                                    </thead>
+                                    <tbody>
+                                      {items.map(it => (
+                                        <tr key={it.name}>
+                                          <td style={{ padding: "5px 8px", fontWeight: 600 }}>{it.name}</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right" }}>{it.qty}개</td>
+                                          <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{won(it.price)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                 </tbody>
