@@ -1093,6 +1093,35 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 
   const roundName = (roundId) => rounds.find(r => r.id === roundId)?.name || "차수 미지정";
 
+  // 🤖 차수 정렬키(최신 차수가 위로 오도록) — sortKey 없으면 이름에서 복구
+  const weekOptionsForSort = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+  const roundSortKey = (roundId) => {
+    const r = rounds.find(rr => rr.id === roundId);
+    if (!r) return -1; // 차수 미지정은 맨 아래로
+    if (r.sortKey) return r.sortKey;
+    const match = (r.name || "").match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(.+)/);
+    if (match) {
+      const wi = weekOptionsForSort.indexOf(match[3].trim()) + 1;
+      return Number(match[1]) * 10000 + Number(match[2]) * 100 + wi;
+    }
+    return 0;
+  };
+
+  // 🤖 "전체 차수"로 볼 때는 차수별로 묶어서 표시 — 그룹 내부는 선택한 정렬 기준 유지, 그룹 순서는 최신 차수가 위
+  const groupedByRound = roundFilter === "전체" ? (() => {
+    const groups = [];
+    filtered.forEach(o => {
+      let g = groups.find(x => x.roundId === o.roundId);
+      if (!g) { g = { roundId: o.roundId, name: roundName(o.roundId), orders: [] }; groups.push(g); }
+      g.orders.push(o);
+    });
+    groups.forEach(g => {
+      g.subtotal = g.orders.reduce((s, o) => s + o.totalPrice, 0);
+      g.subtotalMargin = g.orders.reduce((s, o) => s + o.totalMargin, 0);
+    });
+    return groups.sort((a, b) => roundSortKey(b.roundId) - roundSortKey(a.roundId));
+  })() : null;
+
   // ── 집계 (구 보고서) ──
   const sortAgg = (list) => {
     if (aggSort === "priceLow") return [...list].sort((a, b) => a.price - b.price);
@@ -1217,9 +1246,8 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0
-                  ? <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 내역이 없습니다</td></tr>
-                  : filtered.map((o, i) => {
+                {(() => {
+                  const renderOrderRow = (o, i) => {
                     const isOpen = expanded === o.id;
                     return (
                       <React.Fragment key={o.id}>
@@ -1238,7 +1266,6 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                           <td style={{ padding: "11px 10px", textAlign: "center", color: C.muted, fontSize: 12 }}>{fmtDate(o.date)}</td>
                           <td style={{ padding: "11px 10px", textAlign: "center", fontSize: 12.5, maxWidth: 240 }}>
                             <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.items.map(it => `${it.name} ${it.qty}개`).join(", ")}</div>
-                            {roundFilter === "전체" && <div style={{ fontSize: 10.5, color: C.accent, marginTop: 2 }}>{roundName(o.roundId)}</div>}
                           </td>
                           <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.accent }}>{won(o.totalPrice)}</td>
                           <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 700, color: C.green }}>{won(o.totalMargin)}</td>
@@ -1289,7 +1316,32 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                         )}
                       </React.Fragment>
                     );
-                  })}
+                  };
+
+                  if (filtered.length === 0) {
+                    return <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 내역이 없습니다</td></tr>;
+                  }
+
+                  if (groupedByRound) {
+                    // 🤖 전체 차수 보기 — 차수별로 구분선과 헤더를 넣어서 그룹으로 표시
+                    return groupedByRound.map(g => (
+                      <React.Fragment key={g.roundId || "none"}>
+                        <tr>
+                          <td colSpan={7} style={{ padding: "10px 14px", backgroundColor: C.navy, borderBottom: `1px solid ${C.border}` }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 800, fontSize: 13.5, color: "#fff" }}>🗓 {g.name}</span>
+                              <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.7)" }}>주문 {g.orders.length}건</span>
+                              <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.7)", marginLeft: "auto" }}>판매가 {won(g.subtotal)} · 마진 {won(g.subtotalMargin)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                        {g.orders.map((o, i) => renderOrderRow(o, i))}
+                      </React.Fragment>
+                    ));
+                  }
+
+                  return filtered.map((o, i) => renderOrderRow(o, i));
+                })()}
               </tbody>
             </table>
           </div>
@@ -1862,7 +1914,7 @@ function QuarterlyReport({ orders, rounds, w }) {
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
-            <button style={S.btn(C.navy)} onClick={copyReport}>📋 보고서 복사</button>
+            <button style={S.btnOutline} onClick={copyReport}>📋 보고서 복사</button>
           </div>
         } />
 
@@ -1919,9 +1971,9 @@ function QuarterlyReport({ orders, rounds, w }) {
         <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 720 }}>
             <thead>
-              <tr style={{ backgroundColor: C.navy }}>
+              <tr style={{ backgroundColor: C.accent }}>
                 {["월구분","품명","수량","단가","금액","마진"].map(h => (
-                  <th key={h} style={{ padding: "13px 10px", textAlign: "center", fontWeight: 800, color: "#fff", fontSize: 13, border: `1px solid rgba(255,255,255,0.15)` }}>{h}</th>
+                  <th key={h} style={{ padding: "13px 10px", textAlign: "center", fontWeight: 800, color: "#fff", fontSize: 13, border: `1px solid rgba(255,255,255,0.18)` }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1937,7 +1989,7 @@ function QuarterlyReport({ orders, rounds, w }) {
                           {!monthCellUsed && (monthCellUsed = true) && (
                             <td rowSpan={monthRowSpan} style={{ padding: "12px", textAlign: "center", fontWeight: 900, color: C.accent, fontSize: 19, border: `1px solid ${C.border}`, backgroundColor: C.accentLight, verticalAlign: "middle" }}>{g.month}월</td>
                           )}
-                          <td colSpan={5} style={{ padding: "10px 10px", textAlign: "center", fontWeight: 700, color: "#fff", backgroundColor: C.navy, border: `1px solid ${C.border}`, fontSize: 13.5 }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week})</td>
+                          <td colSpan={5} style={{ padding: "10px 10px", textAlign: "center", fontWeight: 700, color: C.accent, backgroundColor: "rgba(30,93,168,0.08)", border: `1px solid ${C.border}`, fontSize: 13.5 }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week})</td>
                         </tr>
                         {rd.items.length === 0 ? (
                           <tr><td colSpan={5} style={{ padding: "10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
@@ -1957,18 +2009,18 @@ function QuarterlyReport({ orders, rounds, w }) {
                         </tr>
                       </React.Fragment>
                     ))}
-                    <tr style={{ backgroundColor: C.bg }}>
-                      <td colSpan={4} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, fontSize: 14, border: `1px solid ${C.border}` }}>{g.month}월 합계</td>
+                    <tr style={{ backgroundColor: C.accentLight }}>
+                      <td colSpan={4} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, fontSize: 14, border: `1px solid ${C.border}`, color: C.ink }}>{g.month}월 합계</td>
                       <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, fontSize: 14, border: `1px solid ${C.border}`, color: C.ink }}>{won(g.monthTotal)}</td>
                       <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, fontSize: 14, border: `1px solid ${C.border}`, color: C.accent }}>{won(g.monthMargin)}</td>
                     </tr>
                   </React.Fragment>
                 );
               })}
-              <tr style={{ backgroundColor: C.navy }}>
-                <td colSpan={4} style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{year}년 {periodLabel} 사업회계 총합계</td>
-                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandTotal)}</td>
-                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandMargin)}</td>
+              <tr style={{ background: C.gradient }}>
+                <td colSpan={4} style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.18)` }}>{year}년 {periodLabel} 사업회계 총합계</td>
+                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.18)` }}>{won(grandTotal)}</td>
+                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.18)` }}>{won(grandMargin)}</td>
               </tr>
             </tbody>
           </table>
