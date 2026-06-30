@@ -395,6 +395,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 정보수정/구매내역 버튼 노출용
   const [historyId, setHistoryId] = useState(null);
   const [historyTab, setHistoryTab] = useState("byRound"); // all | byRound
+  const [sortMode, setSortMode] = useState("position"); // position | asc | desc
 
   useEffect(() => { setRows(members); }, [members]);
 
@@ -469,7 +470,24 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     commit([...rows, ...parsed]);
   };
 
-  const filtered = rows.filter(r => r.name.includes(search)).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  // 🤖 기본순(직분 우선) 정렬용 — 회장 > 총무 > OO부장 > 그 외
+  const positionRank = (position) => {
+    const p = (position || "").trim();
+    if (p === "회장" || p.includes("회장")) return 0;
+    if (p === "총무" || p.includes("총무")) return 1;
+    if (p.includes("부장")) return 2;
+    return 3;
+  };
+  const sortRows = (list) => {
+    if (sortMode === "asc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
+    return [...list].sort((a, b) => {
+      const r = positionRank(a.position) - positionRank(b.position);
+      if (r !== 0) return r;
+      return a.name.localeCompare(b.name, "ko");
+    });
+  };
+  const filtered = sortRows(rows.filter(r => r.name.includes(search)));
   const editIndex = (!isNewDraft && editingId) ? filtered.findIndex(r => r.id === editingId) : -1;
   const goPrev = () => { if (editIndex > 0) openEdit(filtered[editIndex - 1]); };
   const goNext = () => { if (editIndex >= 0 && editIndex < filtered.length - 1) openEdit(filtered[editIndex + 1]); };
@@ -659,6 +677,16 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       </div>
 
       <input style={{ ...S.input, marginBottom: 12, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {[
+          { id: "position", label: "기본순 (회장·총무·부장 순)" },
+          { id: "asc", label: "가나다 오름차순" },
+          { id: "desc", label: "가나다 내림차순" },
+        ].map(s => (
+          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
+        ))}
+      </div>
 
       <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}>
@@ -1299,7 +1327,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
       {pickerOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, backgroundColor: "rgba(15,46,79,0.45)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center", padding: mob ? 0 : 20 }} onClick={() => setPickerOpen(false)}>
           <div
-            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "26px 28px", maxWidth: 520, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
+            style={{ backgroundColor: C.surface, borderRadius: mob ? "16px 16px 0 0" : 16, padding: mob ? "20px 18px" : "26px 28px", maxWidth: 520, width: "100%", height: mob ? "82vh" : "640px", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1494,39 +1522,43 @@ function QuarterlyReport({ orders, rounds, w }) {
     g.rounds.push(r);
   });
 
-  // 각 차수별 물품 집계(수량/단가/금액) + 주차 소계
+  // 각 차수별 물품 집계(수량/단가/금액/마진) + 주차 소계
   const buildRoundItems = (round) => {
     const agg = {};
     orders.filter(o => o.roundId === round.id).forEach(o => o.items.forEach(it => {
-      if (!agg[it.name]) agg[it.name] = { name: it.name, qty: 0, total: 0 };
+      if (!agg[it.name]) agg[it.name] = { name: it.name, qty: 0, total: 0, cost: 0 };
       agg[it.name].qty += it.qty;
       agg[it.name].total += it.price * it.qty;
+      agg[it.name].cost += (it.cost || 0) * it.qty;
     }));
-    return Object.values(agg);
+    return Object.values(agg).map(it => ({ ...it, margin: it.total - it.cost }));
   };
 
   monthGroups.forEach(g => {
     g.roundData = g.rounds.map(r => {
       const items = buildRoundItems(r);
       const subtotal = items.reduce((s, i) => s + i.total, 0);
-      return { round: r, items, subtotal };
+      const subtotalMargin = items.reduce((s, i) => s + i.margin, 0);
+      return { round: r, items, subtotal, subtotalMargin };
     });
     g.monthTotal = g.roundData.reduce((s, rd) => s + rd.subtotal, 0);
+    g.monthMargin = g.roundData.reduce((s, rd) => s + rd.subtotalMargin, 0);
   });
   const grandTotal = monthGroups.reduce((s, g) => s + g.monthTotal, 0);
+  const grandMargin = monthGroups.reduce((s, g) => s + g.monthMargin, 0);
   const periodLabel = startMonth === endMonth ? `${startMonth}월` : `${startMonth}~${endMonth}월`;
 
   const exportExcel = () => {
-    const rowsOut = [["월구분", "품명", "수량", "단가", "금액"]];
+    const rowsOut = [["월구분", "품명", "수량", "단가", "금액", "마진"]];
     monthGroups.forEach(g => {
       g.roundData.forEach(rd => {
-        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})`, "", "", ""]);
-        rd.items.forEach(it => rowsOut.push(["", it.name, it.qty, Math.round(it.total / it.qty), it.total]));
-        rowsOut.push([`${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week}) 소계`, "", "", "", rd.subtotal]);
+        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})`, "", "", "", ""]);
+        rd.items.forEach(it => rowsOut.push(["", it.name, it.qty, Math.round(it.total / it.qty), it.total, it.margin]));
+        rowsOut.push([`${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week}) 소계`, "", "", "", rd.subtotal, rd.subtotalMargin]);
       });
-      rowsOut.push([`${g.month}월 합계`, "", "", "", g.monthTotal]);
+      rowsOut.push([`${g.month}월 합계`, "", "", "", g.monthTotal, g.monthMargin]);
     });
-    rowsOut.push([`${year}년 ${periodLabel} 총합계`, "", "", "", grandTotal]);
+    rowsOut.push([`${year}년 ${periodLabel} 총합계`, "", "", "", grandTotal, grandMargin]);
     const escapeCell = (v) => {
       const s = String(v == null ? "" : v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -1549,12 +1581,12 @@ function QuarterlyReport({ orders, rounds, w }) {
       text += `■ ${g.month}월\n`;
       g.roundData.forEach(rd => {
         text += `  [${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})]\n`;
-        rd.items.forEach(it => { text += `   - ${it.name} ${it.qty}개 : ${won(it.total)}\n`; });
-        text += `   소계: ${won(rd.subtotal)}\n`;
+        rd.items.forEach(it => { text += `   - ${it.name} ${it.qty}개 : ${won(it.total)} (마진 ${won(it.margin)})\n`; });
+        text += `   소계: ${won(rd.subtotal)} (마진 ${won(rd.subtotalMargin)})\n`;
       });
-      text += `  ${g.month}월 합계: ${won(g.monthTotal)}\n\n`;
+      text += `  ${g.month}월 합계: ${won(g.monthTotal)} (마진 ${won(g.monthMargin)})\n\n`;
     });
-    text += `${year}년 ${periodLabel} 사업회계 총합계: ${won(grandTotal)}`;
+    text += `${year}년 ${periodLabel} 사업회계 총합계: ${won(grandTotal)} (마진 ${won(grandMargin)})`;
     navigator.clipboard.writeText(text);
     alert("보고서가 클립보드에 복사되었습니다!");
   };
@@ -1608,11 +1640,11 @@ function QuarterlyReport({ orders, rounds, w }) {
         <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>이 기간에 해당하는 차수가 없습니다. 연도/월을 다시 확인해보거나, 차수 이름이 "2026년 3월 첫째주"처럼 연도/월이 포함된 형식인지 확인해주세요.</div>
       ) : (
         <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 720 }}>
             <thead>
               <tr style={{ backgroundColor: C.navy }}>
-                {["월구분","품명","수량","단가","금액"].map(h => (
-                  <th key={h} style={{ padding: "11px 10px", textAlign: h === "품명" ? "left" : "center", fontWeight: 800, color: "#fff", fontSize: 12, border: `1px solid rgba(255,255,255,0.15)` }}>{h}</th>
+                {["월구분","품명","수량","단가","금액","마진"].map(h => (
+                  <th key={h} style={{ padding: "13px 10px", textAlign: "center", fontWeight: 800, color: "#fff", fontSize: 13, border: `1px solid rgba(255,255,255,0.15)` }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1626,36 +1658,40 @@ function QuarterlyReport({ orders, rounds, w }) {
                       <React.Fragment key={rd.round.id}>
                         <tr style={{ backgroundColor: C.bg }}>
                           {!monthCellUsed && (monthCellUsed = true) && (
-                            <td rowSpan={monthRowSpan} style={{ padding: "10px", textAlign: "center", fontWeight: 800, color: C.accent, fontSize: 15, border: `1px solid ${C.border}`, backgroundColor: C.accentLight, verticalAlign: "middle" }}>{g.month}월</td>
+                            <td rowSpan={monthRowSpan} style={{ padding: "12px", textAlign: "center", fontWeight: 900, color: C.accent, fontSize: 19, border: `1px solid ${C.border}`, backgroundColor: C.accentLight, verticalAlign: "middle" }}>{g.month}월</td>
                           )}
-                          <td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", fontWeight: 700, color: C.navy, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week})</td>
+                          <td colSpan={5} style={{ padding: "10px 10px", textAlign: "center", fontWeight: 700, color: "#fff", backgroundColor: C.navy, border: `1px solid ${C.border}`, fontSize: 13.5 }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week})</td>
                         </tr>
                         {rd.items.length === 0 ? (
-                          <tr><td colSpan={4} style={{ padding: "9px 10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
+                          <tr><td colSpan={5} style={{ padding: "10px", textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>주문 데이터가 없습니다</td></tr>
                         ) : rd.items.map((it, ii) => (
-                          <tr key={ii} style={{ backgroundColor: ii % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
-                            <td style={{ padding: "9px 10px", border: `1px solid ${C.border}` }}>{it.name}</td>
-                            <td style={{ padding: "9px 10px", textAlign: "center", border: `1px solid ${C.border}` }}>{it.qty}</td>
-                            <td style={{ padding: "9px 10px", textAlign: "right", border: `1px solid ${C.border}`, color: C.muted }}>{won(Math.round(it.total / it.qty))}</td>
-                            <td style={{ padding: "9px 10px", textAlign: "right", border: `1px solid ${C.border}`, fontWeight: 700 }}>{won(it.total)}</td>
+                          <tr key={ii} style={{ backgroundColor: ii % 2 === 1 ? "rgba(30,93,168,0.035)" : "transparent" }}>
+                            <td style={{ padding: "10px", textAlign: "center", fontWeight: 600, border: `1px solid ${C.border}` }}>{it.name}</td>
+                            <td style={{ padding: "10px", textAlign: "center", border: `1px solid ${C.border}` }}>{it.qty}</td>
+                            <td style={{ padding: "10px", textAlign: "center", border: `1px solid ${C.border}`, color: C.muted }}>{won(Math.round(it.total / it.qty))}</td>
+                            <td style={{ padding: "10px", textAlign: "center", border: `1px solid ${C.border}`, fontWeight: 700 }}>{won(it.total)}</td>
+                            <td style={{ padding: "10px", textAlign: "center", border: `1px solid ${C.border}`, fontWeight: 700, color: C.green }}>{won(it.margin)}</td>
                           </tr>
                         ))}
                         <tr style={{ backgroundColor: C.greenLight }}>
-                          <td colSpan={3} style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, fontSize: 12.5, color: C.green, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week}) 소계</td>
-                          <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, fontSize: 12.5, color: C.green, border: `1px solid ${C.border}` }}>{won(rd.subtotal)}</td>
+                          <td colSpan={3} style={{ padding: "9px 10px", textAlign: "center", fontWeight: 700, fontSize: 13, color: C.green, border: `1px solid ${C.border}` }}>{weekRoundNo(rd.round._meta.week)}차({rd.round._meta.week}) 소계</td>
+                          <td style={{ padding: "9px 10px", textAlign: "center", fontWeight: 800, fontSize: 13, color: C.ink, border: `1px solid ${C.border}` }}>{won(rd.subtotal)}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "center", fontWeight: 800, fontSize: 13, color: C.green, border: `1px solid ${C.border}` }}>{won(rd.subtotalMargin)}</td>
                         </tr>
                       </React.Fragment>
                     ))}
                     <tr style={{ backgroundColor: C.bg }}>
-                      <td colSpan={4} style={{ padding: "10px", textAlign: "center", fontWeight: 800, border: `1px solid ${C.border}` }}>{g.month}월 합계</td>
-                      <td style={{ padding: "10px", textAlign: "right", fontWeight: 800, border: `1px solid ${C.border}`, color: C.accent }}>{won(g.monthTotal)}</td>
+                      <td colSpan={4} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, fontSize: 14, border: `1px solid ${C.border}` }}>{g.month}월 합계</td>
+                      <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, fontSize: 14, border: `1px solid ${C.border}`, color: C.ink }}>{won(g.monthTotal)}</td>
+                      <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, fontSize: 14, border: `1px solid ${C.border}`, color: C.accent }}>{won(g.monthMargin)}</td>
                     </tr>
                   </React.Fragment>
                 );
               })}
               <tr style={{ backgroundColor: C.navy }}>
-                <td colSpan={4} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 900, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{year}년 {periodLabel} 사업회계 총합계</td>
-                <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: 900, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandTotal)}</td>
+                <td colSpan={4} style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{year}년 {periodLabel} 사업회계 총합계</td>
+                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandTotal)}</td>
+                <td style={{ padding: "14px 10px", textAlign: "center", fontWeight: 900, fontSize: 15, color: "#fff", border: `1px solid rgba(255,255,255,0.15)` }}>{won(grandMargin)}</td>
               </tr>
             </tbody>
           </table>
@@ -1758,7 +1794,7 @@ export default function App() {
       {mob ? (
         <>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-            <div style={{ fontWeight: 900, fontSize: 15, color: C.accent }}>✝️ 로이스6 주문관리</div>
+            <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ 로이스6 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <SyncBadge status={syncStatus} />
               <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
@@ -1767,7 +1803,7 @@ export default function App() {
           {menuOpen && (
             <div style={{ position: "fixed", inset: 0, zIndex: 300, backgroundColor: "rgba(0,0,0,0.5)" }} onClick={() => setMenuOpen(false)}>
               <div style={{ position: "absolute", top: 0, left: 0, width: 250, height: "100%", backgroundColor: C.surface, padding: "20px 12px" }} onClick={e => e.stopPropagation()}>
-                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ 로이스6 주문관리</div>
+                <div style={{ fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ 로이스6 주문관리</div>
                 {nav.map(n => (
                   <button key={n.id} onClick={() => goTo(n.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: page === n.id ? C.accent : C.ink, marginBottom: 2, fontFamily: "inherit" }}>
                     <span style={{ fontSize: 18 }}>{n.icon}</span><span>{n.label}</span>
@@ -1790,8 +1826,8 @@ export default function App() {
         <div style={{ display: "flex" }}>
           <div style={{ width: isTab(w) ? 180 : 220, minHeight: "100vh", backgroundColor: C.surface, borderRight: `1px solid ${C.border}`, flexShrink: 0, position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "24px 20px 18px", borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: C.accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>로이스6</div>
-              <div style={{ fontSize: isTab(w) ? 14 : 16, fontWeight: 900, marginBottom: 8 }}>사업물품 주문관리</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>로이스6</div>
+              <div style={{ fontSize: isTab(w) ? 17 : 19, fontWeight: 900, marginBottom: 8, lineHeight: 1.3 }}>사업물품 주문관리</div>
               <SyncBadge status={syncStatus} />
             </div>
             <div style={{ padding: 12, flex: 1 }}>
