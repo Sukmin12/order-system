@@ -29,6 +29,23 @@ const won = (n) => `₩${Number(n || 0).toLocaleString("ko-KR")}`;
 const todayStr = () => new Date().toISOString().split("T")[0];
 const fmtDate = (d) => { if (!d) return "-"; const dt = new Date(d); return `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`; };
 
+// 🤖 구글시트 동기화 과정에서 productIds(배열)가 문자열로 깨져서 올 수도 있어 — 다시 배열로 복구
+const normalizeRounds = (roundsArr) => {
+  if (!Array.isArray(roundsArr)) return roundsArr;
+  return roundsArr.map(r => {
+    if (Array.isArray(r.productIds)) return { ...r, productIds: r.productIds.map(Number).filter(n => !isNaN(n)) };
+    if (typeof r.productIds === "string" && r.productIds.trim()) {
+      try {
+        const parsed = JSON.parse(r.productIds);
+        if (Array.isArray(parsed)) return { ...r, productIds: parsed.map(Number).filter(n => !isNaN(n)) };
+      } catch {}
+      const split = r.productIds.split(",").map(s => Number(s.trim())).filter(n => !isNaN(n));
+      if (split.length > 0) return { ...r, productIds: split };
+    }
+    return r;
+  });
+};
+
 // 🤖 팝업이 열려있을 때 ESC 키를 누르면 닫히도록 하는 공용 훅
 const useEscapeClose = (isOpen, onClose) => {
   useEffect(() => {
@@ -2041,7 +2058,7 @@ export default function App() {
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
-  const [rounds, setRounds] = useState(() => load("order-rounds", []));
+  const [rounds, setRounds] = useState(() => normalizeRounds(load("order-rounds", [])));
   const [syncStatus, setSyncStatus] = useState("loading");
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
   useEscapeClose(menuOpen, () => setMenuOpen(false));
@@ -2065,7 +2082,7 @@ export default function App() {
 
       if (data.members) { setMembers(data.members); save("order-members", data.members); }
       if (data.products) { setProducts(data.products); save("order-products", data.products); }
-      if (data.rounds) { setRounds(data.rounds); save("order-rounds", data.rounds); }
+      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save("order-rounds", normalized); }
       if (data.orders) { setOrders(data.orders); save("order-orders", data.orders); }
       setSyncStatus("synced");
     })();
