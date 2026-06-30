@@ -28,6 +28,44 @@ const won = (n) => `₩${Number(n || 0).toLocaleString("ko-KR")}`;
 const todayStr = () => new Date().toISOString().split("T")[0];
 const fmtDate = (d) => { if (!d) return "-"; const dt = new Date(d); return `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`; };
 
+// ── 구글 시트 동기화 ─────────────────────────────────────────────────
+// ⚠️ 여기에 본인의 Apps Script 웹앱 URL을 붙여넣으세요
+const SHEET_API_URL = "여기에_복사한_URL_붙여넣기";
+
+// localStorage 키 ↔ 구글시트 탭 이름 매핑
+const SHEET_MAP = {
+  "order-members": "members",
+  "order-products": "products",
+  "order-rounds": "rounds",
+  "order-orders": "orders",
+};
+
+// 🤖 로컬 저장 + 구글시트 전송을 한 번에 처리 (기존 save 호출부는 그대로 두고 내부만 확장)
+const saveSynced = (key, value) => {
+  save(key, value); // 로컬에는 즉시 저장 (오프라인에서도 끊김 없이 동작)
+  const sheetName = SHEET_MAP[key];
+  if (!sheetName || SHEET_API_URL.includes("여기에")) return;
+  fetch(SHEET_API_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sheet: sheetName, rows: value }),
+  }).catch(() => {}); // 네트워크 실패해도 로컬 데이터는 보존되므로 조용히 무시
+};
+
+// 🤖 구글시트에서 전체 데이터 불러오기
+const fetchAllFromSheet = async () => {
+  if (SHEET_API_URL.includes("여기에")) return null;
+  try {
+    const res = await fetch(SHEET_API_URL);
+    const json = await res.json();
+    if (json.result !== "success") return null;
+    return json.data; // { members, products, rounds, orders }
+  } catch {
+    return null;
+  }
+};
+
 // ── 스타일 ────────────────────────────────────────────────────────────
 const S = {
   input: { width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", fontSize: 14, color: C.ink, backgroundColor: C.surface, outline: "none", fontFamily: "inherit" },
@@ -37,11 +75,25 @@ const S = {
   btnOutline: { backgroundColor: "transparent", color: C.accent, border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   btnGhost: { backgroundColor: "transparent", color: C.muted, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
   card: { backgroundColor: C.surface, borderRadius: 14, border: `1px solid ${C.border}`, padding: "20px" },
+  textareaSmall: { width: "100%", boxSizing: "border-box", border: `1.5px dashed ${C.accent}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: C.ink, backgroundColor: C.surface, outline: "none", fontFamily: "inherit", resize: "vertical" },
 };
 
 const Badge = ({ text, color = C.accent, bg = C.accentLight }) => (
   <span style={{ backgroundColor: bg, color, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>{text}</span>
 );
+
+// 🤖 구글시트 동기화 상태 표시
+const SyncBadge = ({ status }) => {
+  if (status === "off") return null;
+  const map = {
+    loading: { text: "⏳ 동기화 중", color: C.yellow, bg: C.yellowLight },
+    synced: { text: "☁️ 동기화됨", color: C.green, bg: C.greenLight },
+    error: { text: "⚠️ 연결 실패", color: C.red, bg: C.redLight },
+  };
+  const s = map[status];
+  if (!s) return null;
+  return <Badge text={s.text} color={s.color} bg={s.bg} />;
+};
 const Field = ({ label, children }) => <div><label style={S.label}>{label}</label>{children}</div>;
 const Grid = ({ cols = 2, w, children, gap = 12 }) => (
   <div style={{ display: "grid", gridTemplateColumns: `repeat(${isMob(w) ? 1 : cols}, 1fr)`, gap, marginBottom: gap }}>{children}</div>
@@ -78,7 +130,28 @@ function ProductManager({ products, setProducts, w }) {
   const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
   const rowMargin = (r) => (Number(r.price) || 0) - (Number(r.cost) || 0);
 
+  // 🤖 엑셀에서 복사한 표를 붙여넣으면 자동으로 줄을 채워줌 (탭/줄바꿈 구분)
+  const handlePaste = (e) => {
+    const text = e.clipboardData.getData("text");
+    if (!text || !text.includes("\t")) return; // 일반 텍스트 붙여넣기는 그대로 두기
+    e.preventDefault();
+    const parsedRows = text.split(/\r?\n/).filter(line => line.trim() !== "").map(line => {
+      const cols = line.split("\t");
+      const clean = (v) => (v || "").replace(/[₩,\s]/g, "");
+      return { rowId: Date.now() + Math.random(), name: (cols[0] || "").trim(), cost: clean(cols[1]), price: clean(cols[2]) };
+    }).filter(r => r.name && r.name !== "품명"); // 헤더 줄 자동 제외
+    if (parsedRows.length === 0) return;
+    setRows(parsedRows);
+  };
+
   const margin = (Number(form.price) || 0) - (Number(form.cost) || 0);
+
+  // 🤖 중복 이름 경고 — 이미 등록된 물품과 이름이 같으면 알려줌 (저장은 막지 않음)
+  const findDuplicate = (name, excludeId) => {
+    const n = name.trim();
+    if (!n) return null;
+    return products.find(p => p.name.trim() === n && p.id !== excludeId) || null;
+  };
 
   const sortList = (list) => {
     if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
@@ -96,7 +169,7 @@ function ProductManager({ products, setProducts, w }) {
     } else {
       u = [...products, { ...form, id: Date.now() }];
     }
-    setProducts(u); save("order-products", u);
+    setProducts(u); saveSynced("order-products", u);
     setForm(blank); setAdding(false);
   };
 
@@ -105,12 +178,12 @@ function ProductManager({ products, setProducts, w }) {
     if (valid.length === 0) return;
     const newItems = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), cost: r.cost, price: r.price }));
     const u = [...products, ...newItems];
-    setProducts(u); save("order-products", u);
+    setProducts(u); saveSynced("order-products", u);
     setRows([blankRow()]); setAdding(false);
   };
 
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
-  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); save("order-products", u); };
+  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); saveSynced("order-products", u); };
 
   const filtered = sortList(products.filter(p => p.name.includes(search)));
 
@@ -145,6 +218,11 @@ function ProductManager({ products, setProducts, w }) {
                 <Field label="매입원가(입고가)"><input style={S.input} type="number" value={form.cost} onChange={e => setF("cost", e.target.value)} placeholder="20000" /></Field>
                 <Field label="판매가"><input style={S.input} type="number" value={form.price} onChange={e => setF("price", e.target.value)} placeholder="23000" /></Field>
               </Grid>
+              {findDuplicate(form.name, editing) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+                  ⚠️ 이미 같은 이름의 물품이 있어요 — {findDuplicate(form.name, editing).name} ({won(findDuplicate(form.name, editing).price)})
+                </div>
+              )}
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                 <span style={{ fontSize: 13, color: C.muted }}>예상 마진</span>
                 <span style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? C.green : C.red }}>{won(margin)}</span>
@@ -158,25 +236,45 @@ function ProductManager({ products, setProducts, w }) {
             <>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 물품 등록</div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 물품을 한 번에 입력하고 저장할 수 있어요</div>
+
+              {/* 🤖 엑셀 붙여넣기 영역 */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (품명, 매입원가, 판매가 순서)</label>
+                <textarea
+                  onPaste={handlePaste}
+                  placeholder="엑셀에서 품명 / 매입원가 / 판매가 칸을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요"
+                  style={{ ...S.textareaSmall, minHeight: 64 }}
+                  defaultValue=""
+                />
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>붙여넣으면 아래 표가 자동으로 채워져요. 채워진 내용은 직접 수정할 수 있어요.</div>
+              </div>
+
               {rows.map((r, i) => (
-                <div key={r.rowId} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
-                  <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>품명 *</label>}
-                    <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="감귤 5kg" />
+                <div key={r.rowId} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
+                    <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>품명 *</label>}
+                      <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="감귤 5kg" />
+                    </div>
+                    <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>매입원가</label>}
+                      <input style={S.input} type="number" value={r.cost} onChange={e => setRow(r.rowId, "cost", e.target.value)} placeholder="20000" />
+                    </div>
+                    <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>판매가</label>}
+                      <input style={S.input} type="number" value={r.price} onChange={e => setRow(r.rowId, "price", e.target.value)} placeholder="23000" />
+                    </div>
+                    <div style={{ flex: mob ? "1 1 45%" : 1, minWidth: mob ? "auto" : 0, textAlign: "right" }}>
+                      {i === 0 && <label style={S.label}>마진</label>}
+                      <div style={{ padding: "9px 4px", fontSize: 13, fontWeight: 700, color: rowMargin(r) >= 0 ? C.green : C.red }}>{won(rowMargin(r))}</div>
+                    </div>
+                    <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
                   </div>
-                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>매입원가</label>}
-                    <input style={S.input} type="number" value={r.cost} onChange={e => setRow(r.rowId, "cost", e.target.value)} placeholder="20000" />
-                  </div>
-                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>판매가</label>}
-                    <input style={S.input} type="number" value={r.price} onChange={e => setRow(r.rowId, "price", e.target.value)} placeholder="23000" />
-                  </div>
-                  <div style={{ flex: mob ? "1 1 45%" : 1, minWidth: mob ? "auto" : 0, textAlign: "right" }}>
-                    {i === 0 && <label style={S.label}>마진</label>}
-                    <div style={{ padding: "9px 4px", fontSize: 13, fontWeight: 700, color: rowMargin(r) >= 0 ? C.green : C.red }}>{won(rowMargin(r))}</div>
-                  </div>
-                  <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
+                  {findDuplicate(r.name, null) && (
+                    <div style={{ fontSize: 11, color: C.yellow, marginTop: 4, fontWeight: 600 }}>
+                      ⚠️ 이미 등록된 물품과 이름이 같아요 — {findDuplicate(r.name, null).name} ({won(findDuplicate(r.name, null).price)})
+                    </div>
+                  )}
                 </div>
               ))}
               <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
@@ -254,6 +352,26 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const addRow = () => setRows([...rows, blankRow()]);
   const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
 
+  // 🤖 엑셀에서 복사한 표를 붙여넣으면 자동으로 줄을 채워줌 (탭/줄바꿈 구분)
+  const handlePaste = (e) => {
+    const text = e.clipboardData.getData("text");
+    if (!text || !text.includes("\t")) return;
+    e.preventDefault();
+    const parsedRows = text.split(/\r?\n/).filter(line => line.trim() !== "").map(line => {
+      const cols = line.split("\t");
+      return { rowId: Date.now() + Math.random(), name: (cols[0] || "").trim(), phone: (cols[1] || "").trim(), note: (cols[2] || "").trim() };
+    }).filter(r => r.name && r.name !== "이름");
+    if (parsedRows.length === 0) return;
+    setRows(parsedRows);
+  };
+
+  // 🤖 동명이인 경고 — 이미 등록된 이름과 같으면 알려줌 (저장은 막지 않음)
+  const findDuplicateMember = (name, excludeId) => {
+    const n = name.trim();
+    if (!n) return null;
+    return members.find(m => m.name.trim() === n && m.id !== excludeId) || null;
+  };
+
   // 🤖 직분 우선순위: 회장 → 총무 → 부장(○○부장) → 그 외 회원
   const positionRank = (note) => {
     const n = (note || "").trim();
@@ -280,7 +398,7 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     if (!data.name) return members;
     const cleaned = { ...data, note: data.note.trim() || "회원" };
     const u = sortByName(members.map(m => m.id === editing ? { ...cleaned, id: editing } : m));
-    setMembers(u); save("order-members", u);
+    setMembers(u); saveSynced("order-members", u);
     return u;
   };
 
@@ -295,7 +413,7 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
       u = [...members, { ...data, id: Date.now() }];
     }
     u = sortByName(u);
-    setMembers(u); save("order-members", u);
+    setMembers(u); saveSynced("order-members", u);
     setForm(blank); setAdding(false);
   };
 
@@ -304,12 +422,12 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     if (valid.length === 0) return;
     const newMembers = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), phone: r.phone.trim(), note: r.note.trim() || "회원" }));
     const u = sortByName([...members, ...newMembers]);
-    setMembers(u); save("order-members", u);
+    setMembers(u); saveSynced("order-members", u);
     setRows([blankRow()]); setAdding(false);
   };
 
   const startEdit = (m) => { setForm({ name: m.name, phone: m.phone, note: m.note }); setEditing(m.id); setAdding(true); };
-  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
+  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); saveSynced("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
   const filtered = sortList(members.filter(m => m.name.includes(search)));
 
   // 🤖 선택된 회원의 차수별 구매 이력 자동 집계
@@ -395,6 +513,11 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
                   <Field label="연락처"><input style={S.input} value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="010-0000-0000" /></Field>
                   <Field label="메모"><input style={S.input} value={form.note} onChange={e => setF("note", e.target.value)} placeholder="구역, 직분 등" /></Field>
                 </Grid>
+                {findDuplicateMember(form.name, editing) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+                    ⚠️ 이미 같은 이름의 회원이 있어요 — 동명이인인지 확인해주세요
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button style={S.btn()} onClick={saveMember}>수정 저장</button>
                   <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>닫기</button>
@@ -430,21 +553,41 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
             <>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>새 회원 등록</div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 명을 한 번에 입력하고 저장할 수 있어요</div>
+
+              {/* 🤖 엑셀 붙여넣기 영역 */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (이름, 연락처, 메모 순서)</label>
+                <textarea
+                  onPaste={handlePaste}
+                  placeholder="엑셀에서 이름 / 연락처 / 메모 칸을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요"
+                  style={{ ...S.textareaSmall, minHeight: 64 }}
+                  defaultValue=""
+                />
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>붙여넣으면 아래 표가 자동으로 채워져요. 채워진 내용은 직접 수정할 수 있어요.</div>
+              </div>
+
               {rows.map((r, i) => (
-                <div key={r.rowId} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
-                  <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>이름 *</label>}
-                    <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="홍길동" />
+                <div key={r.rowId} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
+                    <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>이름 *</label>}
+                      <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="홍길동" />
+                    </div>
+                    <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>연락처</label>}
+                      <input style={S.input} value={r.phone} onChange={e => setRow(r.rowId, "phone", e.target.value)} placeholder="010-0000-0000" />
+                    </div>
+                    <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
+                      {i === 0 && <label style={S.label}>메모</label>}
+                      <input style={S.input} value={r.note} onChange={e => setRow(r.rowId, "note", e.target.value)} placeholder="구역, 직분 등" />
+                    </div>
+                    <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
                   </div>
-                  <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>연락처</label>}
-                    <input style={S.input} value={r.phone} onChange={e => setRow(r.rowId, "phone", e.target.value)} placeholder="010-0000-0000" />
-                  </div>
-                  <div style={{ flex: mob ? "1 1 45%" : 2, minWidth: mob ? "auto" : 0 }}>
-                    {i === 0 && <label style={S.label}>메모</label>}
-                    <input style={S.input} value={r.note} onChange={e => setRow(r.rowId, "note", e.target.value)} placeholder="구역, 직분 등" />
-                  </div>
-                  <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
+                  {findDuplicateMember(r.name, null) && (
+                    <div style={{ fontSize: 11, color: C.yellow, marginTop: 4, fontWeight: 600 }}>
+                      ⚠️ 이미 등록된 이름과 같아요 — 동명이인인지 확인해주세요
+                    </div>
+                  )}
                 </div>
               ))}
               <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
@@ -563,7 +706,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
       date: todayStr(),
     }));
     const u = [...orders, ...newOrders];
-    setOrders(u); save("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u);
     setCart([]); setMemberId("");
   };
 
@@ -671,13 +814,13 @@ function OrderList({ orders, setOrders, rounds, w }) {
 
   const togglePaid = (id) => {
     const u = orders.map(o => o.id === id ? { ...o, paid: !o.paid, paidAmount: !o.paid ? o.totalPrice : 0 } : o);
-    setOrders(u); save("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u);
   };
   const updatePaidAmount = (id, amt) => {
     const u = orders.map(o => o.id === id ? { ...o, paidAmount: Number(amt), paid: Number(amt) >= o.totalPrice } : o);
-    setOrders(u); save("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u);
   };
-  const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); save("order-orders", u); };
+  const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); saveSynced("order-orders", u); };
 
   const roundOptions = ["전체", ...rounds.map(r => r.name)];
   const byRound = orders.filter(o => {
@@ -974,19 +1117,19 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
   const startRound = () => {
     if (!newRoundName.trim()) return;
     const u = [...rounds.map(r => ({ ...r, active: false })), { id: Date.now(), name: newRoundName.trim(), active: true, createdAt: todayStr() }];
-    setRounds(u); save("order-rounds", u);
+    setRounds(u); saveSynced("order-rounds", u);
     setNewRoundName("");
   };
 
   const removeRound = (id) => {
     if (!window.confirm("이 차수를 삭제할까요? 차수에 속한 주문은 '차수 미지정'으로 남아요.")) return;
     const u = rounds.filter(r => r.id !== id);
-    setRounds(u); save("order-rounds", u);
+    setRounds(u); saveSynced("order-rounds", u);
   };
 
   const setActiveRound = (id) => {
     const u = rounds.map(r => ({ ...r, active: r.id === id }));
-    setRounds(u); save("order-rounds", u);
+    setRounds(u); saveSynced("order-rounds", u);
   };
 
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
@@ -1022,7 +1165,7 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
       date: pastDate,
     };
     const u = [...orders, newOrder];
-    setOrders(u); save("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u);
     setItems([]); setMemberId(""); setPaid(false); setPaidAmount(0); setPastDate(todayStr());
   };
 
@@ -1133,6 +1276,24 @@ export default function App() {
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
   const [rounds, setRounds] = useState(() => load("order-rounds", []));
+  const [syncStatus, setSyncStatus] = useState(SHEET_API_URL.includes("여기에") ? "off" : "loading"); // off | loading | synced | error
+
+  // 🤖 앱이 열릴 때 구글 시트에서 최신 데이터를 불러와서 화면에 반영
+  useEffect(() => {
+    if (SHEET_API_URL.includes("여기에")) return;
+    let cancelled = false;
+    (async () => {
+      const data = await fetchAllFromSheet();
+      if (cancelled) return;
+      if (!data) { setSyncStatus("error"); return; }
+      if (data.members) { setMembers(data.members); save("order-members", data.members); }
+      if (data.products) { setProducts(data.products); save("order-products", data.products); }
+      if (data.rounds) { setRounds(data.rounds); save("order-rounds", data.rounds); }
+      if (data.orders) { setOrders(data.orders); save("order-orders", data.orders); }
+      setSyncStatus("synced");
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const currentRound = rounds.find(r => r.active) || null;
 
   const nav = [
@@ -1163,7 +1324,10 @@ export default function App() {
         <>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
             <div style={{ fontWeight: 900, fontSize: 15, color: C.accent }}>🍊 로이스6 주문관리</div>
-            <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <SyncBadge status={syncStatus} />
+              <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
+            </div>
           </div>
           {menuOpen && (
             <div style={{ position: "fixed", inset: 0, zIndex: 300, backgroundColor: "rgba(0,0,0,0.5)" }} onClick={() => setMenuOpen(false)}>
@@ -1196,7 +1360,8 @@ export default function App() {
           <div style={{ width: isTab(w) ? 180 : 220, minHeight: "100vh", backgroundColor: C.surface, borderRight: `1px solid ${C.border}`, flexShrink: 0, position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "24px 20px 18px", borderBottom: `1px solid ${C.border}` }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: C.accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>로이스6</div>
-              <div style={{ fontSize: isTab(w) ? 14 : 16, fontWeight: 900 }}>사업물품 주문관리</div>
+              <div style={{ fontSize: isTab(w) ? 14 : 16, fontWeight: 900, marginBottom: 8 }}>사업물품 주문관리</div>
+              <SyncBadge status={syncStatus} />
             </div>
             <div style={{ padding: 12, flex: 1 }}>
               {nav.map(n => (
