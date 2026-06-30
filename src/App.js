@@ -174,6 +174,7 @@ function ProductManager({ products, setProducts, w }) {
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState("asc");
+  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 수정/삭제 버튼 노출용
 
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", cost: "", price: "" });
   const [rows, setRows] = useState([blankRow()]);
@@ -233,7 +234,7 @@ function ProductManager({ products, setProducts, w }) {
   };
 
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
-  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); saveSynced("order-products", u); };
+  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); saveSynced("order-products", u); if (selectedRowId === id) setSelectedRowId(null); };
 
   const filtered = sortList(products.filter(p => p.name.includes(search)));
 
@@ -358,15 +359,21 @@ function ProductManager({ products, setProducts, w }) {
               ? <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
               : filtered.map((p, i) => {
                 const m = (Number(p.price) || 0) - (Number(p.cost) || 0);
+                const isSelected = selectedRowId === p.id;
                 return (
-                  <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent" }}>
+                  <tr key={p.id} onClick={() => setSelectedRowId(isSelected ? null : p.id)} style={{
+                    cursor: "pointer",
+                    backgroundColor: isSelected ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
+                    boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
+                    borderBottom: `1px solid ${C.border}`,
+                  }}>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700 }}>{p.name}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: isSelected ? C.accent : C.ink }}>{p.name}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted }}>{won(p.cost)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 600 }}>{won(p.price)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
-                    <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                    <td style={{ padding: "12px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
                         <button style={{ ...S.btn(C.navy), padding: "5px 10px", fontSize: 11 }} onClick={() => startEdit(p)}>수정</button>
                         <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => remove(p.id)}>삭제</button>
                       </div>
@@ -723,13 +730,9 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.position || <span style={{ color: C.border }}>–</span>}</td>
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
                     <td style={{ padding: "8px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                        {isSelected && (
-                          <>
-                            <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => openEdit(r)}>✏️ 정보수정</button>
-                            <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
-                          </>
-                        )}
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
+                        <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => openEdit(r)}>✏️ 정보수정</button>
+                        <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
                         <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
                       </div>
                     </td>
