@@ -1499,7 +1499,13 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [clickedId, setClickedId] = useState(null); // 🤖 카드를 클릭해서 선택한 상태(테두리 강조 + 선택 버튼 노출용)
-  const sortKeyOf = (r) => r.sortKey !== undefined ? r.sortKey : 0;
+  // 🤖 sortKey가 없으면(구글시트 동기화로 누락된 경우) 차수 이름("2026년 7월 첫째주")에서 복구해서 계산
+  const sortKeyOf = (r) => {
+    if (r.sortKey) return r.sortKey;
+    const match = (r.name || "").match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(.+)/);
+    if (match) return makeSortKey(Number(match[1]), Number(match[2]), match[3].trim());
+    return 0;
+  };
 
   // 🤖 "최신순" = 차수의 연/월/주차 기준 날짜가 가장 최근인(가장 큰) 것이 맨 위
   const displayedRounds =
