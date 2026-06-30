@@ -477,11 +477,12 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     commit([...rows, ...parsed]);
   };
 
-  // 🤖 기본순(직분 우선) 정렬용 — 회장 > 총무 > OO부장 > 그 외
-  const positionRank = (position) => {
-    const p = (position || "").trim();
-    if (p === "회장" || p.includes("회장")) return 0;
-    if (p === "총무" || p.includes("총무")) return 1;
+  // 🤖 기본순(직분 우선) 정렬용 — 회장 > 총무 > OO부장(가나다순) > 그 외(가나다순)
+  // 직분 정보가 'position' 필드에 없으면(예전 데이터) 'note' 필드도 같이 확인
+  const positionRank = (r) => {
+    const p = ((r.position || "") + " " + (r.note || "")).trim();
+    if (p.includes("회장")) return 0;
+    if (p.includes("총무")) return 1;
     if (p.includes("부장")) return 2;
     return 3;
   };
@@ -489,7 +490,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     if (sortMode === "asc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
     return [...list].sort((a, b) => {
-      const r = positionRank(a.position) - positionRank(b.position);
+      const r = positionRank(a) - positionRank(b);
       if (r !== 0) return r;
       return a.name.localeCompare(b.name, "ko");
     });
