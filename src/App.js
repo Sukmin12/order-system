@@ -388,6 +388,7 @@ function MemberRegistry({ members, setMembers, w }) {
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   useEffect(() => { setRows(members); }, [members]);
 
@@ -429,6 +430,21 @@ function MemberRegistry({ members, setMembers, w }) {
     const u = rows.filter(r => r.id !== id);
     commit(u);
     if (editingId === id) { setEditingId(null); setForm(null); }
+    setSelectedIds(sel => sel.filter(x => x !== id));
+  };
+
+  const toggleSelect = (id) => setSelectedIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  const toggleSelectAll = (idsOnScreen) => {
+    const allSelected = idsOnScreen.every(id => selectedIds.includes(id));
+    setSelectedIds(allSelected ? selectedIds.filter(id => !idsOnScreen.includes(id)) : [...new Set([...selectedIds, ...idsOnScreen])]);
+  };
+  const bulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`선택한 ${selectedIds.length}명을 삭제할까요? 되돌릴 수 없어요.`)) return;
+    const u = rows.filter(r => !selectedIds.includes(r.id));
+    commit(u);
+    if (selectedIds.includes(editingId)) { setEditingId(null); setForm(null); }
+    setSelectedIds([]);
   };
 
   const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); };
@@ -493,6 +509,7 @@ function MemberRegistry({ members, setMembers, w }) {
       <Title eyebrow="Registry" title="회원 교적관리" sub="표에서 이름을 클릭하면 팝업으로 세부 정보를 입력/수정할 수 있어요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
             <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
             <button style={S.btn()} onClick={addRow}>+ 회원 추가</button>
           </div>
@@ -579,6 +596,9 @@ function MemberRegistry({ members, setMembers, w }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 1380 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
+              <th style={{ padding: "9px 6px", textAlign: "center", borderBottom: `1px solid ${C.border}`, minWidth: 32 }}>
+                <input type="checkbox" checked={filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id))} onChange={() => toggleSelectAll(filtered.map(r => r.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
+              </th>
               <th style={{ padding: "9px 6px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: 36 }}>번호</th>
               {cols.map((c, i) => <th key={c.key + i} style={{ padding: "9px 6px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, minWidth: c.w }}>{c.label}</th>)}
               <th style={{ padding: "9px 6px", borderBottom: `1px solid ${C.border}`, minWidth: 40 }}></th>
@@ -586,9 +606,12 @@ function MemberRegistry({ members, setMembers, w }) {
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={cols.length + 2} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
+              ? <tr><td colSpan={cols.length + 3} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
               : filtered.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: editingId === r.id ? C.accentLight : "transparent" }}>
+                <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: selectedIds.includes(r.id) ? C.accentLight : editingId === r.id ? C.accentLight : "transparent" }}>
+                  <td style={{ padding: "9px 6px", textAlign: "center" }}>
+                    <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
+                  </td>
                   <td style={{ padding: "9px 6px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
                   {cols.map((c, ci) => (
                     <td key={c.key + ci} style={{ padding: "9px 6px", cursor: c.key === "name" ? "pointer" : "default", fontWeight: c.key === "name" ? 700 : 400, color: c.key === "name" ? C.accent : C.ink }}
@@ -1144,6 +1167,7 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
 
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  const [clickedId, setClickedId] = useState(null); // 🤖 카드를 클릭해서 선택한 상태(테두리 강조 + 선택 버튼 노출용)
   const sortKeyOf = (r) => r.sortKey !== undefined ? r.sortKey : 0;
 
   const displayedRounds =
@@ -1261,7 +1285,15 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
               onDragOver={(e) => handleDragOver(e, idx)}
               onDrop={() => handleDrop(idx)}
               onDragEnd={handleDragEnd}
-              style={{ ...S.card, opacity: dragIndex === idx ? 0.4 : 1, border: overIndex === idx && dragIndex !== idx ? `1.5px dashed ${C.accent}` : S.card.border, transition: "opacity 0.15s" }}>
+              onClick={() => setClickedId(clickedId === r.id ? null : r.id)}
+              style={{
+                ...S.card,
+                cursor: "pointer",
+                opacity: dragIndex === idx ? 0.4 : 1,
+                border: clickedId === r.id ? `2px solid ${C.accent}` : (overIndex === idx && dragIndex !== idx ? `1.5px dashed ${C.accent}` : S.card.border),
+                boxShadow: clickedId === r.id ? "0 4px 14px rgba(30,93,168,0.18)" : "none",
+                transition: "opacity 0.15s, border-color 0.15s",
+              }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   {dateFilter === "manual" && <span title="드래그해서 순서 변경" style={{ cursor: "grab", color: C.muted, fontSize: 16, padding: "2px 4px", userSelect: "none" }}>☰</span>}
@@ -1270,13 +1302,13 @@ function RoundManager({ rounds, setRounds, orders, products, w }) {
                   <span style={{ fontSize: 12, color: C.muted }}>주문 {orderCountOf(r.id)}건</span>
                   <span style={{ fontSize: 12, color: C.muted }}>· 판매물품 {productCountOf(r)}개</span>
                 </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
                   <button style={S.btnOutline} onClick={() => openEditPicker(r)}>📦 판매물품 설정</button>
                   {r.active ? (
                     <button disabled style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12, opacity: 0.6, cursor: "default" }}>✓ 선택됨</button>
-                  ) : (
-                    <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => setActiveRound(r.id)}>이 차수로 선택</button>
-                  )}
+                  ) : clickedId === r.id ? (
+                    <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => { setActiveRound(r.id); setClickedId(null); }}>이 차수로 선택</button>
+                  ) : null}
                   <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>
                 </div>
               </div>
