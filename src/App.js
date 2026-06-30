@@ -275,15 +275,24 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   return (
     <div>
       {currentRound ? (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: C.accentLight, color: C.accent, fontSize: 12, fontWeight: 800, padding: "6px 14px", borderRadius: 20, marginBottom: 14 }}>
-          🗓 진행 중 · {currentRound.name}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, backgroundColor: C.accent, color: "#fff", padding: mob ? "16px 18px" : "20px 26px", borderRadius: 16, marginBottom: 20 }}>
+          <span style={{ fontSize: mob ? 26 : 32 }}>🗓</span>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.85, marginBottom: 2 }}>현재 진행 중인 차수</div>
+            <div style={{ fontSize: mob ? 20 : 26, fontWeight: 900, letterSpacing: "-0.02em" }}>{currentRound.name}</div>
+          </div>
         </div>
       ) : (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, fontSize: 12, fontWeight: 800, padding: "6px 14px", borderRadius: 20, marginBottom: 14 }}>
-          ⚠️ 진행 중인 차수가 없어요 · 차수 관리에서 새 차수를 시작해주세요
+        <div style={{ display: "flex", alignItems: "center", gap: 14, backgroundColor: C.yellow, color: "#fff", padding: mob ? "16px 18px" : "20px 26px", borderRadius: 16, marginBottom: 20 }}>
+          <span style={{ fontSize: mob ? 26 : 32 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: mob ? 16 : 19, fontWeight: 800 }}>진행 중인 차수가 없어요</div>
+            <div style={{ fontSize: 13, opacity: 0.9, marginTop: 2 }}>차수 관리 메뉴에서 새 차수를 시작해주세요</div>
+          </div>
         </div>
       )}
       <Title eyebrow="New Order" title="주문 입력" sub="회원을 선택하고 물품을 추가한 뒤 주문 버튼을 누르면 주문 리스트에 바로 등록돼요" w={w} />
+
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr" : "1fr 360px", gap: 16 }}>
         {/* 왼쪽: 입력 */}
@@ -682,6 +691,11 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
     setRounds(u); save("order-rounds", u);
   };
 
+  const setActiveRound = (id) => {
+    const u = rounds.map(r => ({ ...r, active: r.id === id }));
+    setRounds(u); save("order-rounds", u);
+  };
+
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
 
   // 과거 데이터 입력용 장바구니
@@ -729,7 +743,7 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
       <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
         {activeRound && (
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 마감돼요</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 선택돼요. 아래 목록에서 다른 차수를 "이 차수로 선택"해도 돼요</div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: mob ? "wrap" : "nowrap" }}>
           <input style={{ ...S.input, flex: 1 }} value={newRoundName} onChange={e => setNewRoundName(e.target.value)} placeholder="예: 6월 4째주 주문" onKeyDown={e => e.key === "Enter" && startRound()} />
@@ -749,7 +763,8 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
                   {r.active && <Badge text="진행 중" color={C.green} bg={C.greenLight} />}
                   <span style={{ fontSize: 12, color: C.muted }}>주문 {orderCountOf(r.id)}건</span>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {!r.active && <button style={{ ...S.btn(C.green), padding: "8px 14px", fontSize: 12 }} onClick={() => setActiveRound(r.id)}>이 차수로 선택</button>}
                   <button style={S.btnOutline} onClick={() => setPastOpen(pastOpen === r.id ? null : r.id)}>{pastOpen === r.id ? "닫기" : "+ 지난 주문 입력"}</button>
                   <button style={{ ...S.btn(C.red), padding: "8px 14px", fontSize: 12 }} onClick={() => removeRound(r.id)}>삭제</button>
                 </div>
