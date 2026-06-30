@@ -321,6 +321,11 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   const memberTotalPrice = memberOrders.reduce((s, o) => s + o.totalPrice, 0);
   const memberTotalQty = memberOrders.reduce((s, o) => s + o.items.reduce((s2, i) => s2 + i.qty, 0), 0);
 
+  // 🤖 현재 정렬된 목록 기준으로 이전/다음 회원 이동
+  const currentIndex = editing ? filtered.findIndex(m => m.id === editing) : -1;
+  const goPrev = () => { if (currentIndex > 0) startEdit(filtered[currentIndex - 1]); };
+  const goNext = () => { if (currentIndex >= 0 && currentIndex < filtered.length - 1) startEdit(filtered[currentIndex + 1]); };
+
   const sortOptions = [
     { id: "position", label: "직분 우선순" },
     { id: "asc", label: "가나다 오름차순" },
@@ -345,13 +350,24 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
           {editing ? (
             <div>
-              {/* 상단: 닫기 버튼 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              {/* 상단: 이전/다음 + 닫기 버튼 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: 17 }}>{form.name} 정보</div>
-                <button onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}
-                  style={{ border: "none", backgroundColor: C.surface, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  ×
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={goPrev} disabled={currentIndex <= 0}
+                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex <= 0 ? C.border : C.ink, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: currentIndex <= 0 ? "default" : "pointer", fontFamily: "inherit" }}>
+                    ← 이전
+                  </button>
+                  <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{currentIndex + 1} / {filtered.length}</span>
+                  <button onClick={goNext} disabled={currentIndex >= filtered.length - 1}
+                    style={{ border: `1px solid ${C.border}`, backgroundColor: C.surface, color: currentIndex >= filtered.length - 1 ? C.border : C.ink, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: currentIndex >= filtered.length - 1 ? "default" : "pointer", fontFamily: "inherit" }}>
+                    다음 →
+                  </button>
+                  <button onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}
+                    style={{ border: "none", backgroundColor: C.surface, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    ×
+                  </button>
+                </div>
               </div>
 
               {/* 회원 정보 수정 */}
