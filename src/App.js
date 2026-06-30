@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 
-// ── 색상 (로이스6 — 따뜻한 마켓 톤) ──────────────────────────────────
+// ── 색상 (로고 — 오직 주님 블루 그라데이션 톤) ────────────────────────
 const C = {
-  bg: "#FAF7F2", surface: "#FFFFFF", ink: "#2B241C", muted: "#8A7F6E",
-  border: "#E8E0D3", accent: "#B5562C", accentLight: "#FBEEE6",
-  green: "#5C7A4F", greenLight: "#EEF3EA", red: "#C0392B", redLight: "#FDECEA",
-  yellow: "#C9962B", yellowLight: "#FCF3E1", navy: "#3A4A5C",
+  bg: "#F4F8FC", surface: "#FFFFFF", ink: "#1B2A3D", muted: "#6E859C",
+  border: "#DCE6F0", accent: "#1E5DA8", accentLight: "#E7F0FA",
+  green: "#3E8E6E", greenLight: "#E9F5F0", red: "#C0392B", redLight: "#FDECEA",
+  yellow: "#C9962B", yellowLight: "#FCF3E1", navy: "#0F2E4F",
+  gradient: "linear-gradient(135deg, #5BA3E0 0%, #1E5DA8 55%, #0F2E4F 100%)",
 };
 
 // ── 반응형 ────────────────────────────────────────────────────────────
@@ -248,7 +249,7 @@ function ProductManager({ products, setProducts, w }) {
       <Title eyebrow="Products" title="물품 관리" sub="표에서 수정/삭제 버튼으로 바로 관리할 수 있어요" w={w}
         action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 물품 추가</button>} />
 
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.navy, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, background: C.gradient, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18, boxShadow: "0 6px 18px rgba(15,46,79,0.18)" }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>📦</span>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>등록된 물품</div>
@@ -446,7 +447,7 @@ function MemberRegistry({ members, setMembers, w }) {
       <Title eyebrow="Registry" title="회원 교적관리" sub="표 안의 칸을 바로 클릭해서 입력/수정하세요. 다른 칸을 클릭하면 자동 저장돼요" w={w}
         action={<button style={S.btn()} onClick={addRow}>+ 회원 추가</button>} />
 
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.accent, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, background: C.gradient, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18, boxShadow: "0 6px 18px rgba(15,46,79,0.18)" }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>📇</span>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>등록된 회원</div>
@@ -586,7 +587,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
   return (
     <div>
       {currentRound ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 14, backgroundColor: C.accent, color: "#fff", padding: mob ? "16px 18px" : "20px 26px", borderRadius: 16, marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, background: C.gradient, color: "#fff", padding: mob ? "16px 18px" : "20px 26px", borderRadius: 16, marginBottom: 20, boxShadow: "0 8px 24px rgba(15,46,79,0.2)" }}>
           <span style={{ fontSize: mob ? 26 : 32 }}>🗓</span>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.85, marginBottom: 2 }}>현재 진행 중인 차수</div>
@@ -966,7 +967,6 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 //  차수 관리 (간소화 — 새 차수 시작 + 현재 차수 선택만)
 // ════════════════════════════════════════════════════════════════════
 function RoundManager({ rounds, setRounds, orders, w }) {
-  const mob = isMob(w);
   const thisYear = new Date().getFullYear();
   const [newYear, setNewYear] = useState(thisYear);
   const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
@@ -1188,7 +1188,7 @@ export default function App() {
       {mob ? (
         <>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-            <div style={{ fontWeight: 900, fontSize: 15, color: C.accent }}>🍊 로이스6 주문관리</div>
+            <div style={{ fontWeight: 900, fontSize: 15, color: C.accent }}>✝️ 로이스6 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <SyncBadge status={syncStatus} />
               <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
@@ -1197,7 +1197,7 @@ export default function App() {
           {menuOpen && (
             <div style={{ position: "fixed", inset: 0, zIndex: 300, backgroundColor: "rgba(0,0,0,0.5)" }} onClick={() => setMenuOpen(false)}>
               <div style={{ position: "absolute", top: 0, left: 0, width: 250, height: "100%", backgroundColor: C.surface, padding: "20px 12px" }} onClick={e => e.stopPropagation()}>
-                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 20, padding: "0 8px", color: C.accent }}>🍊 로이스6 주문관리</div>
+                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ 로이스6 주문관리</div>
                 {nav.map(n => (
                   <button key={n.id} onClick={() => goTo(n.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: page === n.id ? C.accent : C.ink, marginBottom: 2, fontFamily: "inherit" }}>
                     <span style={{ fontSize: 18 }}>{n.icon}</span><span>{n.label}</span>
