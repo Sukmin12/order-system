@@ -1414,8 +1414,8 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
 export default function App() {
   const w = useWidth();
   const mob = isMob(w);
-  const [page, setPageRaw] = useState("entry"); // 🤖 항상 주문 입력 탭으로 시작
-  const setPage = (id) => setPageRaw(id);
+  const [page, setPageRaw] = useState(() => load("order-current-page", "entry")); // 🤖 새로고침해도 보던 탭 유지, 처음 방문 시엔 주문 입력
+  const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
   const [menuOpen, setMenuOpen] = useState(false);
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
