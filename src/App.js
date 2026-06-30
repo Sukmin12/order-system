@@ -1501,13 +1501,9 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const [clickedId, setClickedId] = useState(null); // 🤖 카드를 클릭해서 선택한 상태(테두리 강조 + 선택 버튼 노출용)
   const sortKeyOf = (r) => r.sortKey !== undefined ? r.sortKey : 0;
 
-  // 🤖 "최신순" = 새로 추가한 순서가 아니라, 오늘 날짜에서 가장 가까운 주차(과거든 미래든)가 먼저 보이도록
-  const today = new Date();
-  const todayWeekNo = Math.min(5, Math.ceil(today.getDate() / 7));
-  const todaySortKey = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + todayWeekNo;
-
+  // 🤖 "최신순" = 차수의 연/월/주차 기준 날짜가 가장 최근인(가장 큰) 것이 맨 위
   const displayedRounds =
-    dateFilter === "latest" ? rounds.slice().sort((a, b) => Math.abs(sortKeyOf(a) - todaySortKey) - Math.abs(sortKeyOf(b) - todaySortKey)) :
+    dateFilter === "latest" ? rounds.slice().sort((a, b) => sortKeyOf(b) - sortKeyOf(a)) :
     dateFilter === "oldest" ? rounds.slice().sort((a, b) => sortKeyOf(a) - sortKeyOf(b)) :
     rounds.slice().reverse();
 
