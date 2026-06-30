@@ -403,7 +403,13 @@ function OrderList({ orders, setOrders, w }) {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 800, fontSize: 16 }}>{o.memberName}</span>
-                    <Badge text={o.paid ? "입금완료" : "미입금"} color={o.paid ? C.green : C.red} bg={o.paid ? C.greenLight : C.redLight} />
+                    <button
+                      onClick={e => { e.stopPropagation(); togglePaid(o.id); }}
+                      style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, display: "flex", alignItems: "center", gap: 4 }}
+                      title="클릭해서 입금 상태 전환"
+                    >
+                      {o.paid ? "✓ 입금완료" : "○ 미입금"}
+                    </button>
                     <span style={{ fontSize: 12, color: C.muted }}>{fmtDate(o.date)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{o.items.map(i => `${i.name} ${i.qty}개`).join(", ")}</div>
