@@ -930,6 +930,32 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   };
   const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); saveSynced("order-orders", u); };
 
+  // 🤖 주문 내 특정 물품의 수량을 수정하면 그 주문의 합계(판매가/매입가/마진)도 자동 재계산
+  const updateItemQty = (orderId, itemIndex, qty) => {
+    const newQty = Math.max(1, Number(qty) || 1);
+    const u = orders.map(o => {
+      if (o.id !== orderId) return o;
+      const items = o.items.map((it, i) => i === itemIndex ? { ...it, qty: newQty } : it);
+      const totalPrice = items.reduce((s, it) => s + it.price * it.qty, 0);
+      const totalCost = items.reduce((s, it) => s + it.cost * it.qty, 0);
+      return { ...o, items, totalPrice, totalCost, totalMargin: totalPrice - totalCost };
+    });
+    setOrders(u); saveSynced("order-orders", u);
+  };
+  const removeItemFromOrder = (orderId, itemIndex) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || order.items.length <= 1) { alert("주문에는 최소 1개의 물품이 있어야 해요. 전체 삭제하려면 '주문 삭제'를 사용하세요."); return; }
+    if (!window.confirm("이 물품을 주문에서 뺄까요?")) return;
+    const u = orders.map(o => {
+      if (o.id !== orderId) return o;
+      const items = o.items.filter((_, i) => i !== itemIndex);
+      const totalPrice = items.reduce((s, it) => s + it.price * it.qty, 0);
+      const totalCost = items.reduce((s, it) => s + it.cost * it.qty, 0);
+      return { ...o, items, totalPrice, totalCost, totalMargin: totalPrice - totalCost };
+    });
+    setOrders(u); saveSynced("order-orders", u);
+  };
+
   const roundOptions = [{ value: "전체", label: "전체 차수" }, ...rounds.map(r => ({ value: r.name, label: r.name + (r.active ? " (진행 중)" : "") }))];
 
   const byRound = orders.filter(o => {
@@ -1077,32 +1103,41 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                   </div>
 
                   {expanded === o.id && (
-                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 14 }}>
-                        <thead><tr>{["물품","수량","매입가","판매가","마진"].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                        <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
                         <tbody>
                           {o.items.map((it, i) => (
                             <tr key={i}>
                               <td style={{ padding: "6px 8px" }}>{it.name}</td>
-                              <td style={{ padding: "6px 8px", textAlign: "right" }}>{it.qty}개</td>
+                              <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                                <input
+                                  type="number" min="1" value={it.qty}
+                                  onChange={e => updateItemQty(o.id, i, e.target.value)}
+                                  style={{ ...S.input, width: 56, padding: "5px 6px", textAlign: "center", fontSize: 12, display: "inline-block" }}
+                                />
+                              </td>
                               <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{won(it.cost * it.qty)}</td>
                               <td style={{ padding: "6px 8px", textAlign: "right" }}>{won(it.price * it.qty)}</td>
                               <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won((it.price - it.cost) * it.qty)}</td>
+                              <td style={{ padding: "6px 4px", textAlign: "right" }}>
+                                <button style={{ ...S.btn(C.red), padding: "3px 7px", fontSize: 10 }} onClick={() => removeItemFromOrder(o.id, i)}>×</button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
 
                       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={e => e.stopPropagation()}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                           <input type="checkbox" checked={o.paid} onChange={() => togglePaid(o.id)} style={{ width: 16, height: 16 }} />
                           <span style={{ fontSize: 13, fontWeight: 600 }}>입금 완료</span>
                         </label>
-                        <div onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ fontSize: 12, color: C.muted }}>입금액</span>
                           <input type="number" value={o.paidAmount || 0} onChange={e => updatePaidAmount(o.id, e.target.value)} style={{ ...S.input, width: 110, padding: "5px 8px" }} />
                         </div>
-                        <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={e => { e.stopPropagation(); remove(o.id); }}>주문 삭제</button>
+                        <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={() => remove(o.id)}>주문 삭제</button>
                       </div>
                     </div>
                   )}
