@@ -68,6 +68,7 @@ function ProductManager({ products, setProducts, w }) {
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
+  const [sortMode, setSortMode] = useState("asc"); // asc | desc | priceHigh | priceLow
 
   // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", cost: "", price: "" });
@@ -78,6 +79,13 @@ function ProductManager({ products, setProducts, w }) {
   const rowMargin = (r) => (Number(r.price) || 0) - (Number(r.cost) || 0);
 
   const margin = (Number(form.price) || 0) - (Number(form.cost) || 0);
+
+  const sortList = (list) => {
+    if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
+    if (sortMode === "priceHigh") return [...list].sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
+    if (sortMode === "priceLow") return [...list].sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+    return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  };
 
   const saveItem = () => {
     if (!form.name) return;
@@ -104,12 +112,28 @@ function ProductManager({ products, setProducts, w }) {
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); save("order-products", u); };
 
-  const filtered = products.filter(p => p.name.includes(search));
+  const filtered = sortList(products.filter(p => p.name.includes(search)));
+
+  const sortOptions = [
+    { id: "asc", label: "가나다 오름차순" },
+    { id: "desc", label: "가나다 내림차순" },
+    { id: "priceHigh", label: "판매가 높은순" },
+    { id: "priceLow", label: "판매가 낮은순" },
+  ];
 
   return (
     <div>
-      <Title eyebrow="Products" title="물품 관리" sub={`등록된 물품 ${products.length}개`} w={w}
+      <Title eyebrow="Products" title="물품 관리" sub="표에서 수정/삭제 버튼으로 바로 관리할 수 있어요" w={w}
         action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 물품 추가</button>} />
+
+      {/* 🤖 물품 수 — 눈에 띄는 카드 */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.navy, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
+        <span style={{ fontSize: mob ? 22 : 26 }}>📦</span>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>등록된 물품</div>
+          <div style={{ fontSize: mob ? 20 : 24, fontWeight: 900 }}>{products.length}개</div>
+        </div>
+      </div>
 
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
@@ -165,7 +189,14 @@ function ProductManager({ products, setProducts, w }) {
         </div>
       )}
 
-      <input style={{ ...S.input, marginBottom: 14 }} placeholder="품명 검색" value={search} onChange={e => setSearch(e.target.value)} />
+      <input style={{ ...S.input, marginBottom: 12 }} placeholder="품명 검색" value={search} onChange={e => setSearch(e.target.value)} />
+
+      {/* 🤖 정렬 필터 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {sortOptions.map(s => (
+          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
+        ))}
+      </div>
 
       <div style={{ ...S.card, padding: 0, overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 480 : 600 }}>
@@ -214,6 +245,7 @@ function MemberManager({ members, setMembers, w }) {
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
+  const [sortMode, setSortMode] = useState("position"); // position | asc | desc
 
   // 🤖 일괄 등록용 — 여러 줄을 한 번에 입력 후 한꺼번에 저장
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", phone: "", note: "" });
@@ -222,8 +254,26 @@ function MemberManager({ members, setMembers, w }) {
   const addRow = () => setRows([...rows, blankRow()]);
   const removeRow = (rowId) => setRows(rows.length === 1 ? rows : rows.filter(r => r.rowId !== rowId));
 
-  // 🤖 가나다순 자동 정렬
+  // 🤖 직분 우선순위: 회장 → 총무 → 부장(○○부장) → 그 외 회원
+  const positionRank = (note) => {
+    const n = (note || "").trim();
+    if (n === "회장" || n.includes("회장")) return 0;
+    if (n === "총무" || n.includes("총무")) return 1;
+    if (n.includes("부장")) return 2;
+    return 3;
+  };
+
   const sortByName = (list) => [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const sortList = (list) => {
+    if (sortMode === "asc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
+    // position: 직분 우선순위 먼저, 그 안에서는 가나다순
+    return [...list].sort((a, b) => {
+      const r = positionRank(a.note) - positionRank(b.note);
+      if (r !== 0) return r;
+      return a.name.localeCompare(b.name, "ko");
+    });
+  };
 
   const saveMember = () => {
     if (!form.name) return;
@@ -250,12 +300,27 @@ function MemberManager({ members, setMembers, w }) {
 
   const startEdit = (m) => { setForm({ name: m.name, phone: m.phone, note: m.note }); setEditing(m.id); setAdding(true); };
   const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = members.filter(m => m.id !== id); setMembers(u); save("order-members", u); if (editing === id) { setEditing(null); setAdding(false); setForm(blank); } };
-  const filtered = sortByName(members.filter(m => m.name.includes(search)));
+  const filtered = sortList(members.filter(m => m.name.includes(search)));
+
+  const sortOptions = [
+    { id: "position", label: "직분 우선순" },
+    { id: "asc", label: "가나다 오름차순" },
+    { id: "desc", label: "가나다 내림차순" },
+  ];
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 관리" sub={`등록된 회원 ${members.length}명 · 가나다순 정렬 · 회원 카드를 클릭하면 수정할 수 있어요`} w={w}
+      <Title eyebrow="Members" title="회원 관리" sub="회원 카드를 클릭하면 수정할 수 있어요" w={w}
         action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
+
+      {/* 🤖 회원 수 — 눈에 띄는 카드 */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.accent, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
+        <span style={{ fontSize: mob ? 22 : 26 }}>👤</span>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>등록된 회원</div>
+          <div style={{ fontSize: mob ? 20 : 24, fontWeight: 900 }}>{members.length}명</div>
+        </div>
+      </div>
 
       {adding && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
@@ -303,23 +368,36 @@ function MemberManager({ members, setMembers, w }) {
         </div>
       )}
 
-      <input style={{ ...S.input, marginBottom: 14 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
+      <input style={{ ...S.input, marginBottom: 12 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
+
+      {/* 🤖 정렬 필터 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {sortOptions.map(s => (
+          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
+        ))}
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "1fr 1fr" : "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
         {filtered.length === 0
           ? <div style={{ ...S.card, gridColumn: "1/-1", textAlign: "center", color: C.muted }}>등록된 회원이 없습니다</div>
-          : filtered.map(m => (
-            <div key={m.id} style={{ ...S.card, padding: 14, cursor: "pointer" }} onClick={() => startEdit(m)}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: 15 }}>{m.name}</div>
-                  {m.phone && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{m.phone}</div>}
-                  {m.note && <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>{m.note}</div>}
+          : filtered.map(m => {
+            const rank = positionRank(m.note);
+            return (
+              <div key={m.id} style={{ ...S.card, padding: 14, cursor: "pointer" }} onClick={() => startEdit(m)}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 800, fontSize: 15 }}>{m.name}</span>
+                      {rank < 3 && m.note && <Badge text={m.note} color={rank === 0 ? C.accent : rank === 1 ? C.navy : C.green} bg={rank === 0 ? C.accentLight : rank === 1 ? C.bg : C.greenLight} />}
+                    </div>
+                    {m.phone && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{m.phone}</div>}
+                    {rank === 3 && m.note && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{m.note}</div>}
+                  </div>
+                  <button style={{ ...S.btn(C.red), padding: "4px 9px", fontSize: 10 }} onClick={e => { e.stopPropagation(); remove(m.id); }}>삭제</button>
                 </div>
-                <button style={{ ...S.btn(C.red), padding: "4px 9px", fontSize: 10 }} onClick={e => { e.stopPropagation(); remove(m.id); }}>삭제</button>
               </div>
-            </div>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
