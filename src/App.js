@@ -355,6 +355,34 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
     setRows(parsedRows);
   };
 
+  // 🤖 기존 회원 일괄 업데이트 — 이름을 기준으로 매칭해서 연락처/메모를 덮어씀
+  const [updateMode, setUpdateMode] = useState(false);
+  const [updateRows, setUpdateRows] = useState([]);
+  const handleUpdatePaste = (e) => {
+    const text = e.clipboardData.getData("text");
+    if (!text || !text.includes("\t")) return;
+    e.preventDefault();
+    const parsed = text.split(/\r?\n/).filter(line => line.trim() !== "").map(line => {
+      const cols = line.split("\t");
+      const name = (cols[0] || "").trim();
+      const matched = members.find(m => m.name.trim() === name);
+      return { name, phone: (cols[1] || "").trim(), note: (cols[2] || "").trim(), matched: !!matched };
+    }).filter(r => r.name && r.name !== "이름");
+    setUpdateRows(parsed);
+  };
+  const matchedCount = updateRows.filter(r => r.matched).length;
+  const unmatchedCount = updateRows.length - matchedCount;
+  const applyBulkUpdate = () => {
+    if (matchedCount === 0) return;
+    const u = members.map(m => {
+      const row = updateRows.find(r => r.name === m.name.trim() && r.matched);
+      if (!row) return m;
+      return { ...m, phone: row.phone || m.phone, note: row.note || m.note };
+    });
+    setMembers(u); saveSynced("order-members", u);
+    setUpdateRows([]); setUpdateMode(false);
+  };
+
   const findDuplicateMember = (name, excludeId) => {
     const n = name.trim();
     if (!n) return null;
@@ -454,7 +482,48 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
   return (
     <div>
       <Title eyebrow="Members" title="회원 관리" sub="회원 카드를 클릭하면 수정할 수 있어요" w={w}
-        action={<button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setAdding(!adding); }}>+ 회원 추가</button>} />
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={S.btnOutline} onClick={() => { setUpdateRows([]); setAdding(false); setUpdateMode(!updateMode); }}>📋 기존 회원 일괄 업데이트</button>
+            <button style={S.btn()} onClick={() => { setForm(blank); setRows([blankRow()]); setEditing(null); setUpdateMode(false); setAdding(!adding); }}>+ 회원 추가</button>
+          </div>
+        } />
+
+      {updateMode && (
+        <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.bg, border: `1.5px solid ${C.navy}` }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>📋 기존 회원 일괄 업데이트</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>이름을 기준으로 같은 이름의 회원을 찾아 연락처와 메모를 업데이트해요. 새 회원은 추가되지 않아요.</div>
+          <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (이름, 연락처, 메모 순서)</label>
+          <textarea
+            onPaste={handleUpdatePaste}
+            placeholder="엑셀에서 이름 / 연락처 / 메모 칸을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요"
+            style={{ ...S.textareaSmall, minHeight: 64, marginBottom: 14 }}
+            defaultValue=""
+          />
+          {updateRows.length > 0 && (
+            <>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                <Badge text={`매칭됨 ${matchedCount}명`} color={C.green} bg={C.greenLight} />
+                {unmatchedCount > 0 && <Badge text={`이름 못찾음 ${unmatchedCount}명`} color={C.red} bg={C.redLight} />}
+              </div>
+              <div style={{ backgroundColor: C.surface, borderRadius: 8, padding: 12, marginBottom: 14, maxHeight: 240, overflowY: "auto" }}>
+                {updateRows.map((r, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 13, borderBottom: i < updateRows.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                    <span style={{ width: 16 }}>{r.matched ? "✅" : "❌"}</span>
+                    <span style={{ fontWeight: 700, width: 70 }}>{r.name}</span>
+                    <span style={{ color: C.muted, flex: 1 }}>{r.phone || "-"}</span>
+                    <span style={{ color: C.muted }}>{r.note || "-"}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={S.btn(C.navy)} onClick={applyBulkUpdate} disabled={matchedCount === 0}>{matchedCount}명 업데이트 적용</button>
+            <button style={S.btnGhost} onClick={() => { setUpdateMode(false); setUpdateRows([]); }}>취소</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "inline-flex", alignItems: "center", gap: 12, backgroundColor: C.accent, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 18 }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>👤</span>
@@ -499,9 +568,12 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
                     ⚠️ 이미 같은 이름의 회원이 있어요 — 동명이인인지 확인해주세요
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button style={S.btn()} onClick={saveMember}>수정 저장</button>
-                  <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>닫기</button>
+                <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button style={S.btn()} onClick={saveMember}>수정 저장</button>
+                    <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); setForm(blank); }}>닫기</button>
+                  </div>
+                  <button style={{ ...S.btn(C.red), padding: "10px 16px" }} onClick={() => remove(editing)}>회원 삭제</button>
                 </div>
               </div>
 
@@ -594,17 +666,12 @@ function MemberManager({ members, setMembers, orders, rounds, w }) {
             const rank = positionRank(m.note);
             return (
               <div key={m.id} style={{ ...S.card, padding: 14, cursor: "pointer" }} onClick={() => startEdit(m)}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 800, fontSize: 15 }}>{m.name}</span>
-                      {rank < 3 && m.note && <Badge text={m.note} color={rank === 0 ? C.accent : rank === 1 ? C.navy : C.green} bg={rank === 0 ? C.accentLight : rank === 1 ? C.bg : C.greenLight} />}
-                    </div>
-                    {m.phone && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{m.phone}</div>}
-                    {rank === 3 && m.note && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{m.note}</div>}
-                  </div>
-                  <button style={{ ...S.btn(C.red), padding: "4px 9px", fontSize: 10 }} onClick={e => { e.stopPropagation(); remove(m.id); }}>삭제</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, fontSize: 15 }}>{m.name}</span>
+                  {rank < 3 && m.note && <Badge text={m.note} color={rank === 0 ? C.accent : rank === 1 ? C.navy : C.green} bg={rank === 0 ? C.accentLight : rank === 1 ? C.bg : C.greenLight} />}
                 </div>
+                {m.phone && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{m.phone}</div>}
+                {rank === 3 && m.note && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{m.note}</div>}
               </div>
             );
           })}
@@ -1070,7 +1137,10 @@ function ReportPage({ orders, rounds, w }) {
 // ════════════════════════════════════════════════════════════════════
 function RoundManager({ rounds, setRounds, orders, setOrders, members, products, w }) {
   const mob = isMob(w);
-  const [newRoundName, setNewRoundName] = useState("");
+  const thisYear = new Date().getFullYear();
+  const [newYear, setNewYear] = useState(thisYear);
+  const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
+  const [newWeek, setNewWeek] = useState("첫째주");
   const [pastOpen, setPastOpen] = useState(null);
   const [memberId, setMemberId] = useState("");
   const [items, setItems] = useState([]);
@@ -1079,12 +1149,22 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
   const [pastDate, setPastDate] = useState(todayStr());
   const [paid, setPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
+  const [dateFilter, setDateFilter] = useState("latest"); // latest | oldest
+
+  const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+  const weekIndex = (w) => weekOptions.indexOf(w) + 1;
+
+  // 🤖 연/월/주차를 정렬 가능한 숫자 키로 변환 (예: 2026년 7월 첫째주 → 202607 01)
+  const makeSortKey = (year, month, week) => year * 10000 + month * 100 + weekIndex(week);
 
   const startRound = () => {
-    if (!newRoundName.trim()) return;
-    const u = [...rounds.map(r => ({ ...r, active: false })), { id: Date.now(), name: newRoundName.trim(), active: true, createdAt: todayStr() }];
+    const name = `${newYear}년 ${newMonth}월 ${newWeek}`;
+    const u = [...rounds.map(r => ({ ...r, active: false })), {
+      id: Date.now(), name, active: true, createdAt: todayStr(),
+      year: newYear, month: newMonth, week: newWeek,
+      sortKey: makeSortKey(newYear, newMonth, newWeek),
+    }];
     setRounds(u); saveSynced("order-rounds", u);
-    setNewRoundName("");
   };
 
   const removeRound = (id) => {
@@ -1099,6 +1179,30 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
   };
 
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
+
+  // 🤖 드래그로 차수 순서 변경 — 날짜 필터가 "수동"일 때만 드래그 가능, 과거순/최신순일 땐 자동 정렬
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+
+  const sortKeyOf = (r) => r.sortKey !== undefined ? r.sortKey : 0; // 옛 차수(연/월/주 정보 없음)는 가장 과거로 취급
+
+  const displayedRounds =
+    dateFilter === "latest" ? rounds.slice().sort((a, b) => sortKeyOf(b) - sortKeyOf(a)) :
+    dateFilter === "oldest" ? rounds.slice().sort((a, b) => sortKeyOf(a) - sortKeyOf(b)) :
+    rounds.slice().reverse(); // manual: 등록 역순(드래그로 바꾼 순서 그대로)
+
+  const handleDragStart = (idx) => { if (dateFilter !== "manual") return; setDragIndex(idx); };
+  const handleDragOver = (e, idx) => { if (dateFilter !== "manual") return; e.preventDefault(); setOverIndex(idx); };
+  const handleDrop = (idx) => {
+    if (dateFilter !== "manual" || dragIndex === null || dragIndex === idx) { setDragIndex(null); setOverIndex(null); return; }
+    const reordered = [...displayedRounds];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(idx, 0, moved);
+    const newRounds = reordered.slice().reverse();
+    setRounds(newRounds); saveSynced("order-rounds", newRounds);
+    setDragIndex(null); setOverIndex(null);
+  };
+  const handleDragEnd = () => { setDragIndex(null); setOverIndex(null); };
 
   const addItem = () => {
     if (!pickProduct) return;
@@ -1138,26 +1242,61 @@ function RoundManager({ rounds, setRounds, orders, setOrders, members, products,
 
   return (
     <div>
-      <Title eyebrow="Rounds" title="차수 관리" sub="매 회차(예: 6월 4째주 주문)를 만들고, 지난 기록도 차수별로 입력할 수 있어요" w={w} />
+      <Title eyebrow="Rounds" title="차수 관리" sub="연도/월/주차를 선택해서 차수를 만들고, 지난 기록도 차수별로 입력할 수 있어요" w={w} />
 
       <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
         {activeRound && (
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 선택돼요. 아래 목록에서 다른 차수를 "이 차수로 선택"해도 돼요</div>
         )}
-        <div style={{ display: "flex", gap: 8, flexWrap: mob ? "wrap" : "nowrap" }}>
-          <input style={{ ...S.input, flex: 1 }} value={newRoundName} onChange={e => setNewRoundName(e.target.value)} placeholder="예: 6월 4째주 주문" onKeyDown={e => e.key === "Enter" && startRound()} />
-          <button style={{ ...S.btn(), flexShrink: 0 }} onClick={startRound}>새 차수 시작</button>
+        <Grid cols={3} w={w}>
+          <Field label="연도">
+            <select style={S.select} value={newYear} onChange={e => setNewYear(Number(e.target.value))}>
+              {Array.from({ length: 6 }, (_, i) => thisYear - 1 + i).map(y => <option key={y} value={y}>{y}년</option>)}
+            </select>
+          </Field>
+          <Field label="월">
+            <select style={S.select} value={newMonth} onChange={e => setNewMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+            </select>
+          </Field>
+          <Field label="주차">
+            <select style={S.select} value={newWeek} onChange={e => setNewWeek(e.target.value)}>
+              {weekOptions.map(wk => <option key={wk}>{wk}</option>)}
+            </select>
+          </Field>
+        </Grid>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button style={S.btn()} onClick={startRound}>새 차수 시작</button>
+          <span style={{ fontSize: 13, color: C.muted }}>→ "{newYear}년 {newMonth}월 {newWeek}"로 생성돼요</span>
         </div>
+      </div>
+
+      {/* 🤖 정렬 필터 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {[
+          { id: "latest", label: "최신순" },
+          { id: "oldest", label: "과거순" },
+          { id: "manual", label: "직접 정렬 (드래그)" },
+        ].map(f => (
+          <button key={f.id} onClick={() => setDateFilter(f.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: dateFilter === f.id ? C.accent : C.bg, color: dateFilter === f.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{f.label}</button>
+        ))}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rounds.length === 0
           ? <div style={{ ...S.card, textAlign: "center", color: C.muted }}>등록된 차수가 없습니다. 위에서 첫 차수를 시작해보세요.</div>
-          : rounds.slice().reverse().map(r => (
-            <div key={r.id} style={S.card}>
+          : displayedRounds.map((r, idx) => (
+            <div key={r.id}
+              draggable={dateFilter === "manual"}
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDrop={() => handleDrop(idx)}
+              onDragEnd={handleDragEnd}
+              style={{ ...S.card, opacity: dragIndex === idx ? 0.4 : 1, border: overIndex === idx && dragIndex !== idx ? `1.5px dashed ${C.accent}` : S.card.border, transition: "opacity 0.15s" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  {dateFilter === "manual" && <span title="드래그해서 순서 변경" style={{ cursor: "grab", color: C.muted, fontSize: 16, padding: "2px 4px", userSelect: "none" }}>☰</span>}
                   <span style={{ fontWeight: 800, fontSize: 16 }}>{r.name}</span>
                   {r.active && <Badge text="진행 중" color={C.green} bg={C.greenLight} />}
                   <span style={{ fontSize: 12, color: C.muted }}>주문 {orderCountOf(r.id)}건</span>
