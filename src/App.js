@@ -30,7 +30,7 @@ const fmtDate = (d) => { if (!d) return "-"; const dt = new Date(d); return `${d
 
 // ── 구글 시트 동기화 ─────────────────────────────────────────────────
 // ⚠️ 여기에 본인의 Apps Script 웹앱 URL을 붙여넣으세요
-const SHEET_API_URL = "여기에_복사한_URL_붙여넣기";
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec";
 
 // localStorage 키 ↔ 구글시트 탭 이름 매핑
 const SHEET_MAP = {
