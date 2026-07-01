@@ -485,15 +485,15 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
 
       {/* 🤖 CRUD 바 — 항상 고정 표시 */}
       <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
-          {selectedProdIds.length > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedProdIds.length}개 선택됨</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", height: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }}>{selectedProdIds.length}개 선택됨</span>
           <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length === 1 ? 1 : 0.35, cursor: selectedProdIds.length === 1 ? "pointer" : "default" }} onClick={() => {
             if (selectedProdIds.length !== 1) return;
             const p = filtered.find(x => x.id === selectedProdIds[0]);
             if (p) startEdit(p);
           }}>수정</button>
           <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length > 0 ? 1 : 0.35, cursor: selectedProdIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedProdIds.length > 0) bulkDeleteProducts(); }}>삭제</button>
-          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, opacity: selectedProdIds.length > 0 ? 1 : 0.35 }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
+          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
           <span style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>클릭 선택 · 더블클릭 수정</span>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
@@ -1306,11 +1306,11 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
           </div>
 
           <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-            {/* 🤖 CRUD 바 — 우상단 상시 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
-              {selectedOrderIds.length > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedOrderIds.length}건 선택됨</span>}
+            {/* 🤖 CRUD 바 — 우상단 상시, 고정 높이로 레이아웃 안정 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", height: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedOrderIds.length > 0 ? "visible" : "hidden" }}>{selectedOrderIds.length}건 선택됨</span>
               <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedOrderIds.length > 0 ? 1 : 0.35, cursor: selectedOrderIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedOrderIds.length > 0) bulkDeleteOrders(); }}>주문 삭제</button>
-              {selectedOrderIds.length > 0 && <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedOrderIds([])}>선택 해제</button>}
+              <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedOrderIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedOrderIds([])}>선택 해제</button>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 820 }}>
               <thead>
