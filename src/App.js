@@ -483,24 +483,18 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         ))}
       </div>
 
-      {/* 🤖 CRUD 바 — 표 우상단에 항상 표시 */}
+      {/* 🤖 CRUD 바 — 항상 고정 표시 */}
       <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
-          {selectedProdIds.length > 0 ? (
-            <>
-              <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedProdIds.length}개 선택됨</span>
-              {selectedProdIds.length === 1 && (
-                <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12 }} onClick={() => {
-                  const p = filtered.find(x => x.id === selectedProdIds[0]);
-                  if (p) startEdit(p);
-                }}>수정</button>
-              )}
-              <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12 }} onClick={bulkDeleteProducts}>삭제</button>
-              <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
-            </>
-          ) : (
-            <span style={{ fontSize: 12, color: C.muted }}>행 클릭으로 선택 · 더블클릭으로 수정</span>
-          )}
+          {selectedProdIds.length > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedProdIds.length}개 선택됨</span>}
+          <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length === 1 ? 1 : 0.35, cursor: selectedProdIds.length === 1 ? "pointer" : "default" }} onClick={() => {
+            if (selectedProdIds.length !== 1) return;
+            const p = filtered.find(x => x.id === selectedProdIds[0]);
+            if (p) startEdit(p);
+          }}>수정</button>
+          <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length > 0 ? 1 : 0.35, cursor: selectedProdIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedProdIds.length > 0) bulkDeleteProducts(); }}>삭제</button>
+          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, opacity: selectedProdIds.length > 0 ? 1 : 0.35 }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
+          <span style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>클릭 선택 · 더블클릭 수정</span>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
           <thead>
@@ -1078,10 +1072,28 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
 function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   const mob = isMob(w);
   const [view, setView] = useState("list"); // list | aggregate
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const toggleOrderSelect = (id) => setSelectedOrderIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  const toggleOrderSelectAll = (ids) => {
+    const allSelected = ids.every(id => selectedOrderIds.includes(id));
+    setSelectedOrderIds(allSelected ? selectedOrderIds.filter(id => !ids.includes(id)) : [...new Set([...selectedOrderIds, ...ids])]);
+  };
+  const bulkDeleteOrders = () => {
+    if (selectedOrderIds.length === 0) return;
+    if (!window.confirm(`선택한 ${selectedOrderIds.length}건의 주문을 삭제할까요?`)) return;
+    const u = orders.filter(o => !selectedOrderIds.includes(o.id));
+    setOrders(u); saveSynced("order-orders", u);
+    setSelectedOrderIds([]);
+  };
   const [filter, setFilter] = useState("전체");
   const [roundFilter, setRoundFilter] = useState(currentRound ? currentRound.name : "전체");
   const [sortMode, setSortMode] = useState("none"); // none | priceHigh | priceLow
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded] = useState(new Set());
+  const toggleExpanded = (id) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [aggTab, setAggTab] = useState("product");
   const [aggSort, setAggSort] = useState("priceHigh");
 
@@ -1294,10 +1306,19 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
           </div>
 
           <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 760 }}>
+            {/* 🤖 CRUD 바 — 우상단 상시 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
+              {selectedOrderIds.length > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedOrderIds.length}건 선택됨</span>}
+              <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedOrderIds.length > 0 ? 1 : 0.35, cursor: selectedOrderIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedOrderIds.length > 0) bulkDeleteOrders(); }}>주문 삭제</button>
+              {selectedOrderIds.length > 0 && <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedOrderIds([])}>선택 해제</button>}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 820 }}>
               <thead>
                 <tr style={{ backgroundColor: C.bg }}>
-                  {["이름","입금상태","날짜","구매물품","판매가","마진",""].map(h => (
+                  <th style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, width: 36 }}>
+                    <input type="checkbox" style={{ width: 14, height: 14, cursor: "pointer" }} checked={filtered.length > 0 && filtered.every(o => selectedOrderIds.includes(o.id))} onChange={() => toggleOrderSelectAll(filtered.map(o => o.id))} />
+                  </th>
+                  {["번호","이름","입금상태","날짜","구매물품","판매가","마진",""].map(h => (
                     <th key={h} style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}` }}>{h}</th>
                   ))}
                 </tr>
@@ -1305,10 +1326,15 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
               <tbody>
                 {(() => {
                   const renderOrderRow = (o, i) => {
-                    const isOpen = expanded === o.id;
+                    const isOpen = expanded.has(o.id);
+                    const isChecked = selectedOrderIds.includes(o.id);
                     return (
                       <React.Fragment key={o.id}>
-                        <tr onClick={() => setExpanded(isOpen ? null : o.id)} style={{ cursor: "pointer", backgroundColor: isOpen ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"), borderBottom: `1px solid ${C.border}` }}>
+                        <tr onClick={() => toggleExpanded(o.id)} style={{ cursor: "pointer", backgroundColor: isOpen ? C.accentLight : (isChecked ? "rgba(30,93,168,0.06)" : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent")), borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: "11px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={isChecked} onChange={() => toggleOrderSelect(o.id)} style={{ width: 14, height: 14, cursor: "pointer" }} />
+                          </td>
+                          <td style={{ padding: "11px 10px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
                           <td style={{ padding: "11px 10px", textAlign: "center", fontWeight: 800, color: isOpen ? C.accent : C.ink }}>{o.memberName}</td>
                           <td style={{ padding: "11px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
                             <button
@@ -1330,7 +1356,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                         </tr>
                         {isOpen && (
                           <tr>
-                            <td colSpan={7} style={{ padding: 0, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg }}>
+                            <td colSpan={9} style={{ padding: 0, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg }}>
                               <div style={{ padding: "16px 18px" }} onClick={e => e.stopPropagation()}>
                                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 14 }}>
                                   <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
@@ -1376,7 +1402,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                   };
 
                   if (filtered.length === 0) {
-                    return <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 내역이 없습니다</td></tr>;
+                    return <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 내역이 없습니다</td></tr>;
                   }
 
                   if (groupedByRound) {
@@ -1384,7 +1410,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                     return groupedByRound.map(g => (
                       <React.Fragment key={g.roundId || "none"}>
                         <tr>
-                          <td colSpan={7} style={{ padding: "10px 14px", backgroundColor: C.navy, borderBottom: `1px solid ${C.border}` }}>
+                          <td colSpan={9} style={{ padding: "10px 14px", backgroundColor: C.navy, borderBottom: `1px solid ${C.border}` }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 800, fontSize: 13.5, color: "#fff" }}>🗓 {g.name}</span>
                               <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.7)" }}>주문 {g.orders.length}건</span>
