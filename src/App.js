@@ -483,22 +483,25 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         ))}
       </div>
 
-      {/* 🤖 CRUD 바 — 선택된 물품이 있을 때 나타남 */}
-      {selectedProdIds.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, backgroundColor: C.accentLight, border: `1px solid ${C.accent}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{selectedProdIds.length}개 선택됨</span>
-          {selectedProdIds.length === 1 && (
-            <button style={{ ...S.btn(C.navy), padding: "6px 14px", fontSize: 12 }} onClick={() => {
-              const p = filtered.find(x => x.id === selectedProdIds[0]);
-              if (p) startEdit(p);
-            }}>수정</button>
-          )}
-          <button style={{ ...S.btn(C.red), padding: "6px 14px", fontSize: 12 }} onClick={bulkDeleteProducts}>삭제</button>
-          <button style={{ ...S.btnGhost, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
-        </div>
-      )}
-
+      {/* 🤖 CRUD 바 — 표 우상단에 항상 표시 */}
       <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
+          {selectedProdIds.length > 0 ? (
+            <>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4 }}>{selectedProdIds.length}개 선택됨</span>
+              {selectedProdIds.length === 1 && (
+                <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12 }} onClick={() => {
+                  const p = filtered.find(x => x.id === selectedProdIds[0]);
+                  if (p) startEdit(p);
+                }}>수정</button>
+              )}
+              <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12 }} onClick={bulkDeleteProducts}>삭제</button>
+              <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
+            </>
+          ) : (
+            <span style={{ fontSize: 12, color: C.muted }}>행 클릭으로 선택 · 더블클릭으로 수정</span>
+          )}
+        </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
@@ -599,8 +602,8 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     setSelectedIds([]);
   };
 
-  // 🤖 행 클릭 = 선택 표시(보더 강조) + 바로 편집 팝업 열기
-  const selectRow = (r) => { setSelectedRowId(r.id); openEdit(r); };
+  // 🤖 클릭 = 체크박스 토글 + 행 하이라이트, 더블클릭 = 편집 팝업 열기
+  const selectRow = (r) => { setSelectedRowId(r.id); toggleSelect(r.id); };
 
   const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setIsNewDraft(false); };
   const closeEdit = () => { setEditingId(null); setForm(null); setIsNewDraft(false); };
@@ -710,7 +713,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 명단" sub="행을 클릭하면 바로 정보를 수정할 수 있어요" w={w}
+      <Title eyebrow="Members" title="회원 명단" sub="클릭하면 선택, 더블클릭하면 정보수정 팝업이 열려요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
@@ -877,11 +880,15 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
               : filtered.map((r, i) => {
                 const isSelected = selectedRowId === r.id;
                 return (
-                  <tr key={r.id} onClick={() => selectRow(r)} style={{
-                    cursor: "pointer",
-                    backgroundColor: isSelected ? C.accentLight : selectedIds.includes(r.id) ? C.bg : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
-                    boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
-                  }}>
+                  <tr key={r.id}
+                    onClick={() => selectRow(r)}
+                    onDoubleClick={() => openEdit(r)}
+                    title="더블클릭하면 정보수정"
+                    style={{
+                      cursor: "pointer",
+                      backgroundColor: selectedIds.includes(r.id) ? C.accentLight : isSelected ? C.bg : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
+                      boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
+                    }}>
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
                     </td>
@@ -893,7 +900,6 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                     <td style={{ padding: "8px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
                         <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
-                        <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
                       </div>
                     </td>
                   </tr>
@@ -2104,7 +2110,6 @@ function QuarterlyReport({ orders, rounds, w }) {
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button style={S.btnOutline} onClick={downloadJpg} disabled={monthGroups.length === 0}>🖼️ JPG 다운로드</button>
-            <button style={S.btnOutline} onClick={copyReport}>📋 보고서 복사</button>
           </div>
         } />
 
