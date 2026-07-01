@@ -396,82 +396,89 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         </div>
       </div>
 
-      {adding && (
+      {/* 🤖 물품 수정 팝업 — 더블클릭 시 오버레이로 표시 */}
+      {adding && editing && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { setAdding(false); setEditing(null); }}>
+          <div style={{ backgroundColor: C.surface, borderRadius: 16, padding: 28, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(15,46,79,0.35)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>✏️ 물품 수정</div>
+              <button onClick={() => { setAdding(false); setEditing(null); }} style={{ border: "none", backgroundColor: C.bg, color: C.muted, width: 32, height: 32, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 18 }}>수정하면 이 물품이 들어간 과거 주문들의 이름·가격·합계도 함께 갱신돼요</div>
+            <Grid cols={3} w={w}>
+              <Field label="품명 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="감귤 5kg" autoFocus /></Field>
+              <Field label="매입원가(입고가)"><input style={S.input} type="number" value={form.cost} onChange={e => setF("cost", e.target.value)} placeholder="20000" /></Field>
+              <Field label="판매가"><input style={S.input} type="number" value={form.price} onChange={e => setF("price", e.target.value)} placeholder="23000" /></Field>
+            </Grid>
+            {findDuplicate(form.name, editing) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+                ⚠️ 이미 같은 이름의 물품이 있어요 — {findDuplicate(form.name, editing).name} ({won(findDuplicate(form.name, editing).price)})
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+              <span style={{ fontSize: 13, color: C.muted }}>예상 마진</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? C.green : C.red }}>{won(margin)}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={S.btn()} onClick={saveItem}>수정 저장</button>
+              <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🤖 물품 신규 등록 폼 — 인라인 */}
+      {adding && !editing && (
         <div style={{ ...S.card, marginBottom: 18, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-          {editing ? (
-            <>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>물품 수정</div>
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여기서 수정하면 이 물품이 들어간 과거 주문들의 이름·가격·합계도 함께 갱신돼요</div>
-              <Grid cols={3} w={w}>
-                <Field label="품명 *"><input style={S.input} value={form.name} onChange={e => setF("name", e.target.value)} placeholder="감귤 5kg" /></Field>
-                <Field label="매입원가(입고가)"><input style={S.input} type="number" value={form.cost} onChange={e => setF("cost", e.target.value)} placeholder="20000" /></Field>
-                <Field label="판매가"><input style={S.input} type="number" value={form.price} onChange={e => setF("price", e.target.value)} placeholder="23000" /></Field>
-              </Grid>
-              {findDuplicate(form.name, editing) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: C.yellowLight, color: C.yellow, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
-                  ⚠️ 이미 같은 이름의 물품이 있어요 — {findDuplicate(form.name, editing).name} ({won(findDuplicate(form.name, editing).price)})
-                </div>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 13, color: C.muted }}>예상 마진</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? C.green : C.red }}>{won(margin)}</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={S.btn()} onClick={saveItem}>수정 저장</button>
-                <button style={S.btnGhost} onClick={() => { setAdding(false); setEditing(null); }}>취소</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 800, marginBottom: 4 }}>새 물품 등록</div>
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 물품을 한 번에 입력하고 저장할 수 있어요</div>
+          <>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>새 물품 등록</div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>여러 물품을 한 번에 입력하고 저장할 수 있어요</div>
 
-              <div style={{ marginBottom: 18 }}>
-                <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (품명, 매입원가, 판매가 순서)</label>
-                <textarea
-                  onPaste={handlePaste}
-                  placeholder="엑셀에서 품명 / 매입원가 / 판매가 칸을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요"
-                  style={{ ...S.textareaSmall, minHeight: 64 }}
-                  defaultValue=""
-                />
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>붙여넣으면 아래 표가 자동으로 채워져요. 채워진 내용은 직접 수정할 수 있어요.</div>
-              </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={S.label}>📋 엑셀에서 복사한 표 붙여넣기 (품명, 매입원가, 판매가 순서)</label>
+              <textarea
+                onPaste={handlePaste}
+                placeholder="엑셀에서 품명 / 매입원가 / 판매가 칸을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요"
+                style={{ ...S.textareaSmall, minHeight: 64 }}
+                defaultValue=""
+              />
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>붙여넣으면 아래 표가 자동으로 채워져요. 채워진 내용은 직접 수정할 수 있어요.</div>
+            </div>
 
-              {rows.map((r, i) => (
-                <div key={r.rowId} style={{ marginBottom: 8 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
-                    <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
-                      {i === 0 && <label style={S.label}>품명 *</label>}
-                      <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="감귤 5kg" />
-                    </div>
-                    <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
-                      {i === 0 && <label style={S.label}>매입원가</label>}
-                      <input style={S.input} type="number" value={r.cost} onChange={e => setRow(r.rowId, "cost", e.target.value)} placeholder="20000" />
-                    </div>
-                    <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
-                      {i === 0 && <label style={S.label}>판매가</label>}
-                      <input style={S.input} type="number" value={r.price} onChange={e => setRow(r.rowId, "price", e.target.value)} placeholder="23000" />
-                    </div>
-                    <div style={{ flex: mob ? "1 1 45%" : 1, minWidth: mob ? "auto" : 0, textAlign: "right" }}>
-                      {i === 0 && <label style={S.label}>마진</label>}
-                      <div style={{ padding: "9px 4px", fontSize: 13, fontWeight: 700, color: rowMargin(r) >= 0 ? C.green : C.red }}>{won(rowMargin(r))}</div>
-                    </div>
-                    <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
+            {rows.map((r, i) => (
+              <div key={r.rowId} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: mob ? "wrap" : "nowrap" }}>
+                  <div style={{ flex: mob ? "1 1 100%" : 2, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>품명 *</label>}
+                    <input style={S.input} value={r.name} onChange={e => setRow(r.rowId, "name", e.target.value)} placeholder="감귤 5kg" />
                   </div>
-                  {findDuplicate(r.name, null) && (
-                    <div style={{ fontSize: 11, color: C.yellow, marginTop: 4, fontWeight: 600 }}>
-                      ⚠️ 이미 등록된 물품과 이름이 같아요 — {findDuplicate(r.name, null).name} ({won(findDuplicate(r.name, null).price)})
-                    </div>
-                  )}
+                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>매입원가</label>}
+                    <input style={S.input} type="number" value={r.cost} onChange={e => setRow(r.rowId, "cost", e.target.value)} placeholder="20000" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 1.4, minWidth: mob ? "auto" : 0 }}>
+                    {i === 0 && <label style={S.label}>판매가</label>}
+                    <input style={S.input} type="number" value={r.price} onChange={e => setRow(r.rowId, "price", e.target.value)} placeholder="23000" />
+                  </div>
+                  <div style={{ flex: mob ? "1 1 45%" : 1, minWidth: mob ? "auto" : 0, textAlign: "right" }}>
+                    {i === 0 && <label style={S.label}>마진</label>}
+                    <div style={{ padding: "9px 4px", fontSize: 13, fontWeight: 700, color: rowMargin(r) >= 0 ? C.green : C.red }}>{won(rowMargin(r))}</div>
+                  </div>
+                  <button style={{ ...S.btn(C.red), padding: "9px 12px", flexShrink: 0 }} onClick={() => removeRow(r.rowId)} disabled={rows.length === 1}>×</button>
                 </div>
-              ))}
-              <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={S.btn()} onClick={saveBulk}>전체 저장</button>
-                <button style={S.btnGhost} onClick={() => { setAdding(false); setRows([blankRow()]); }}>취소</button>
+                {findDuplicate(r.name, null) && (
+                  <div style={{ fontSize: 11, color: C.yellow, marginTop: 4, fontWeight: 600 }}>
+                    ⚠️ 이미 등록된 물품과 이름이 같아요 — {findDuplicate(r.name, null).name} ({won(findDuplicate(r.name, null).price)})
+                  </div>
+                )}
               </div>
-            </>
-          )}
+            ))}
+            <button style={{ ...S.btnOutline, marginBottom: 14 }} onClick={addRow}>+ 줄 추가</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={S.btn()} onClick={saveBulk}>전체 저장</button>
+              <button style={S.btnGhost} onClick={() => { setAdding(false); setRows([blankRow()]); }}>취소</button>
+            </div>
+          </>
         </div>
       )}
 
@@ -2243,6 +2250,29 @@ export default function App() {
   const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
   const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // 🤖 풀투리프레시 — 모바일에서 아래로 당기면 페이지 새로고침
+  const [pullY, setPullY] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const touchStartY = useRef(0);
+  const PULL_THRESHOLD = 80;
+  const handleTouchStart = (e) => {
+    if (window.scrollY === 0) touchStartY.current = e.touches[0].clientY;
+  };
+  const handleTouchMove = (e) => {
+    if (touchStartY.current === 0) return;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    if (dy > 0 && window.scrollY === 0) {
+      setIsPulling(true);
+      setPullY(Math.min(dy * 0.4, PULL_THRESHOLD + 20));
+    }
+  };
+  const handleTouchEnd = () => {
+    if (pullY >= PULL_THRESHOLD) window.location.reload();
+    setIsPulling(false);
+    setPullY(0);
+    touchStartY.current = 0;
+  };
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
@@ -2328,7 +2358,16 @@ export default function App() {
         </div>
       )}
       {mob ? (
-        <>
+        <div onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} style={{ minHeight: "100vh" }}>
+          {/* 🤖 풀투리프레시 인디케이터 */}
+          {isPulling && (
+            <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 54px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+              <div style={{ marginTop: 8, width: 36, height: 36, borderRadius: "50%", backgroundColor: C.surface, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.12)", transform: `rotate(${pullY / PULL_THRESHOLD * 360}deg)`, transition: "transform 0.05s" }}>
+                <span style={{ fontSize: 16 }}>{pullY >= PULL_THRESHOLD ? "✅" : "↓"}</span>
+              </div>
+            </div>
+          )}
+          <div style={{ transform: isPulling ? `translateY(${pullY}px)` : "none", transition: isPulling ? "none" : "transform 0.25s ease" }}>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, paddingTop: "env(safe-area-inset-top, 0px)", paddingLeft: 16, paddingRight: 16, display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 54 }}>
             <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ 로이스6 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2357,7 +2396,8 @@ export default function App() {
               </button>
             ))}
           </div>
-        </>
+        </div>
+        </div>
       ) : (
         <div style={{ display: "flex" }}>
           <div style={{ width: isTab(w) ? 180 : 220, minHeight: "100vh", backgroundColor: C.surface, borderRight: `1px solid ${C.border}`, flexShrink: 0, position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
