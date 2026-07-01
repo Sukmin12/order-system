@@ -277,7 +277,6 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState("asc");
-  const [selectedRowId, setSelectedRowId] = useState(null);
   const [selectedProdIds, setSelectedProdIds] = useState([]);
 
   const toggleProdSelect = (id) => setSelectedProdIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
