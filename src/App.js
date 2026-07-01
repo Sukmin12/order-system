@@ -277,7 +277,21 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState("asc");
-  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 수정/삭제 버튼 노출용
+  const [selectedRowId, setSelectedRowId] = useState(null);
+  const [selectedProdIds, setSelectedProdIds] = useState([]);
+
+  const toggleProdSelect = (id) => setSelectedProdIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  const toggleProdSelectAll = (ids) => {
+    const allSelected = ids.every(id => selectedProdIds.includes(id));
+    setSelectedProdIds(allSelected ? selectedProdIds.filter(id => !ids.includes(id)) : [...new Set([...selectedProdIds, ...ids])]);
+  };
+  const bulkDeleteProducts = () => {
+    if (selectedProdIds.length === 0) return;
+    if (!window.confirm(`선택한 ${selectedProdIds.length}개 물품을 삭제할까요?`)) return;
+    const u = products.filter(p => !selectedProdIds.includes(p.id));
+    setProducts(u); saveSynced("order-products", u);
+    setSelectedProdIds([]);
+  };
 
   const blankRow = () => ({ rowId: Date.now() + Math.random(), name: "", cost: "", price: "" });
   const [rows, setRows] = useState([blankRow()]);
@@ -471,12 +485,30 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         ))}
       </div>
 
+      {/* 🤖 CRUD 바 — 선택된 물품이 있을 때 나타남 */}
+      {selectedProdIds.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, backgroundColor: C.accentLight, border: `1px solid ${C.accent}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{selectedProdIds.length}개 선택됨</span>
+          {selectedProdIds.length === 1 && (
+            <button style={{ ...S.btn(C.navy), padding: "6px 14px", fontSize: 12 }} onClick={() => {
+              const p = filtered.find(x => x.id === selectedProdIds[0]);
+              if (p) startEdit(p);
+            }}>수정</button>
+          )}
+          <button style={{ ...S.btn(C.red), padding: "6px 14px", fontSize: 12 }} onClick={bulkDeleteProducts}>삭제</button>
+          <button style={{ ...S.btnGhost, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
+        </div>
+      )}
+
       <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 560 : 680 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
-              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", width: 64 }}>번호</th>
-              {["품명","매입원가(입고가)","판매가","마진","관리"].map(h => (
+              <th style={{ padding: "12px 10px", textAlign: "center", borderBottom: `2px solid ${C.border}`, width: 40 }}>
+                <input type="checkbox" checked={filtered.length > 0 && filtered.every(p => selectedProdIds.includes(p.id))} onChange={() => toggleProdSelectAll(filtered.map(p => p.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", width: 56 }}>번호</th>
+              {["품명","매입원가(입고가)","판매가","마진"].map(h => (
                 <th key={h} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -486,25 +518,26 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
               ? <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
               : filtered.map((p, i) => {
                 const m = (Number(p.price) || 0) - (Number(p.cost) || 0);
-                const isSelected = selectedRowId === p.id;
+                const isSelected = selectedProdIds.includes(p.id);
                 return (
-                  <tr key={p.id} onClick={() => setSelectedRowId(isSelected ? null : p.id)} style={{
-                    cursor: "pointer",
-                    backgroundColor: isSelected ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
-                    boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
-                    borderBottom: `1px solid ${C.border}`,
-                  }}>
+                  <tr key={p.id}
+                    onClick={() => toggleProdSelect(p.id)}
+                    onDoubleClick={() => { setSelectedProdIds([]); startEdit(p); }}
+                    title="더블클릭하면 수정"
+                    style={{
+                      cursor: "pointer",
+                      backgroundColor: isSelected ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
+                      boxShadow: isSelected ? `inset 3px 0 0 ${C.accent}` : "none",
+                      borderBottom: `1px solid ${C.border}`,
+                    }}>
+                    <td style={{ padding: "12px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleProdSelect(p.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
+                    </td>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: isSelected ? C.accent : C.ink }}>{p.name}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted }}>{won(p.cost)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 600 }}>{won(p.price)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
-                    <td style={{ padding: "12px 10px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
-                        <button style={{ ...S.btn(C.navy), padding: "5px 10px", fontSize: 11 }} onClick={() => startEdit(p)}>수정</button>
-                        <button style={{ ...S.btn(C.red), padding: "5px 10px", fontSize: 11 }} onClick={() => remove(p.id)}>삭제</button>
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
@@ -526,7 +559,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   const [form, setForm] = useState(null);
   const [isNewDraft, setIsNewDraft] = useState(false); // 🤖 신규 작성 중인지 — 저장 누르기 전까진 목록에 추가 안 함
   const [selectedIds, setSelectedIds] = useState([]);
-  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 정보수정/구매내역 버튼 노출용
+  const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 구매내역 버튼 노출용
   const [historyId, setHistoryId] = useState(null);
   const [historyTab, setHistoryTab] = useState("byRound"); // all | byRound
   const [sortMode, setSortMode] = useState("position"); // position | asc | desc
@@ -568,8 +601,8 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
     setSelectedIds([]);
   };
 
-  // 행 클릭 = 선택(보더 강조)만 함. 팝업은 "정보수정" 버튼을 눌러야 열림
-  const selectRow = (r) => setSelectedRowId(prev => prev === r.id ? null : r.id);
+  // 🤖 행 클릭 = 선택 표시(보더 강조) + 바로 편집 팝업 열기
+  const selectRow = (r) => { setSelectedRowId(r.id); openEdit(r); };
 
   const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setIsNewDraft(false); };
   const closeEdit = () => { setEditingId(null); setForm(null); setIsNewDraft(false); };
@@ -679,7 +712,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
 
   return (
     <div>
-      <Title eyebrow="Members" title="회원 명단" sub="회원을 클릭해서 선택하면 정보수정 / 구매내역 버튼이 나타나요" w={w}
+      <Title eyebrow="Members" title="회원 명단" sub="행을 클릭하면 바로 정보를 수정할 수 있어요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
@@ -861,7 +894,6 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
                     <td style={{ padding: "8px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
-                        <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => openEdit(r)}>✏️ 정보수정</button>
                         <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
                         <button style={{ ...S.btn(C.red), padding: "3px 8px", fontSize: 10 }} onClick={() => removeRow(r.id)}>×</button>
                       </div>
@@ -1886,31 +1918,170 @@ function QuarterlyReport({ orders, rounds, w }) {
     ? (startMonth === endMonth ? `${startMonth}월` : `${startMonth}~${endMonth}월`)
     : `${startMonth}월 ${weekOptions[startWeek - 1]} ~ ${endMonth}월 ${weekOptions[endWeek - 1]}`;
 
-  const exportExcel = () => {
-    const rowsOut = [["월구분", "품명", "수량", "단가", "금액", "마진"]];
+  // 🤖 분기 이름 계산 (1~4분기 또는 기간 표시)
+  const quarterName = (() => {
+    if (startWeek === 1 && endWeek === 5) {
+      if (startMonth === 1 && endMonth === 3) return "1분기";
+      if (startMonth === 4 && endMonth === 6) return "2분기";
+      if (startMonth === 7 && endMonth === 9) return "3분기";
+      if (startMonth === 10 && endMonth === 12) return "4분기";
+    }
+    return periodLabel;
+  })();
+  const reportTitle = `로이스6 ${quarterName} 사업보고`;
+
+  // 🤖 A4 사이즈(1240×1754px) 캔버스에 표를 직접 그려서 JPG로 저장
+  const downloadJpg = () => {
+    const W = 1240, PAD = 52, COL_MONTH = 90;
+    const COLS = [
+      { label: "월구분", w: COL_MONTH },
+      { label: "품명",   w: 280 },
+      { label: "수량",   w: 80 },
+      { label: "단가",   w: 140 },
+      { label: "금액",   w: 160 },
+      { label: "마진",   w: 160 },
+    ];
+    const tableW = W - PAD * 2;
+    // 총 고정폭 계산 후 품명 칸을 나머지로 채우기
+    const fixedW = COLS.filter(c => c.label !== "품명").reduce((s, c) => s + c.w, 0);
+    COLS.find(c => c.label === "품명").w = tableW - fixedW;
+
+    const ROW_H = 36, HEADER_H = 48, SECTION_H = 42, SUB_H = 38, MONTH_TOTAL_H = 42, TITLE_H = 90, META_H = 50, TOTAL_H = 50, FOOTER_H = 40;
+
+    // 먼저 필요한 총 높이 계산
+    let totalH = TITLE_H + META_H + HEADER_H + TOTAL_H + FOOTER_H + 40;
     monthGroups.forEach(g => {
       g.roundData.forEach(rd => {
-        rowsOut.push([`${g.month}월`, `${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})`, "", "", "", ""]);
-        rd.items.forEach(it => rowsOut.push(["", it.name, it.qty, Math.round(it.total / it.qty), it.total, it.margin]));
-        rowsOut.push([`${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week}) 소계`, "", "", "", rd.subtotal, rd.subtotalMargin]);
+        totalH += SECTION_H + (rd.items.length || 1) * ROW_H + SUB_H;
       });
-      rowsOut.push([`${g.month}월 합계`, "", "", "", g.monthTotal, g.monthMargin]);
+      totalH += MONTH_TOTAL_H;
     });
-    rowsOut.push([`${year}년 ${periodLabel} 총합계`, "", "", "", grandTotal, grandMargin]);
-    const escapeCell = (v) => {
-      const s = String(v == null ? "" : v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const H = Math.max(1754, totalH + PAD * 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // 배경
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+
+    // 컬러
+    const ACCENT = "#1E5DA8", NAVY = "#0F2E4F", GREEN = "#3E8E6E";
+    const ACCENT_LIGHT = "#E7F0FA", GREEN_LIGHT = "#E9F5F0";
+    const BORDER = "#DCE6F0", MUTED = "#6E859C", INK = "#1B2A3D";
+
+    const fillRect = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); };
+    const strokeRect = (x, y, w, h, color = BORDER) => { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); };
+    const text = (txt, x, y, { color = INK, size = 14, weight = "normal", align = "center" } = {}) => {
+      ctx.fillStyle = color;
+      ctx.font = `${weight} ${size}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
+      ctx.textAlign = align;
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(txt), x, y);
     };
-    const csv = rowsOut.map(r => r.map(escapeCell).join(",")).join("\r\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${year}년_${periodLabel}_사업회계.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    let y = PAD;
+
+    // 제목 바
+    fillRect(PAD, y, tableW, TITLE_H, ACCENT);
+    text(reportTitle, PAD + tableW / 2, y + TITLE_H / 2, { color: "#fff", size: 28, weight: "bold" });
+    y += TITLE_H + 10;
+
+    // 메타 (기간/일시)
+    const metaText = `${year}년 ${periodLabel} | 총 판매가 ${won(grandTotal)} | 총 마진 ${won(grandMargin)}`;
+    fillRect(PAD, y, tableW, META_H, ACCENT_LIGHT);
+    text(metaText, PAD + tableW / 2, y + META_H / 2, { color: ACCENT, size: 14, weight: "bold" });
+    y += META_H + 14;
+
+    // 표 헤더
+    fillRect(PAD, y, tableW, HEADER_H, NAVY);
+    let cx = PAD;
+    COLS.forEach(c => {
+      text(c.label, cx + c.w / 2, y + HEADER_H / 2, { color: "#fff", size: 13, weight: "bold" });
+      cx += c.w;
+    });
+    y += HEADER_H;
+
+    // 데이터 행
+    monthGroups.forEach(g => {
+      const monthRows = g.roundData.reduce((s, rd) => s + SECTION_H + (rd.items.length || 1) * ROW_H + SUB_H, 0) + MONTH_TOTAL_H;
+      let monthY = y;
+
+      g.roundData.forEach(rd => {
+        // 차수 헤더
+        fillRect(PAD + COLS[0].w, monthY, tableW - COLS[0].w, SECTION_H, ACCENT_LIGHT);
+        strokeRect(PAD, monthY, tableW, SECTION_H);
+        text(`${weekRoundNo(rd.round._meta.week)}차 (${rd.round._meta.week})`, PAD + COLS[0].w + (tableW - COLS[0].w) / 2, monthY + SECTION_H / 2, { color: ACCENT, size: 13, weight: "bold" });
+        monthY += SECTION_H;
+
+        // 품목 행
+        const items = rd.items.length > 0 ? rd.items : [{ name: "주문 데이터 없음", qty: "", total: 0, margin: 0 }];
+        items.forEach((it, ii) => {
+          const bg = ii % 2 === 1 ? "#F4F8FC" : "#FFFFFF";
+          fillRect(PAD + COLS[0].w, monthY, tableW - COLS[0].w, ROW_H, bg);
+          strokeRect(PAD, monthY, tableW, ROW_H);
+          cx = PAD + COLS[0].w;
+          [it.name, it.qty ? `${it.qty}개` : "", it.qty ? won(Math.round(it.total / it.qty)) : "", won(it.total), won(it.margin)].forEach((val, vi) => {
+            const col = COLS[vi + 1];
+            text(val, cx + col.w / 2, monthY + ROW_H / 2, { color: vi === 4 ? GREEN : (vi === 2 ? MUTED : INK), size: 13, weight: vi === 0 ? "600" : "normal" });
+            cx += col.w;
+          });
+          monthY += ROW_H;
+        });
+
+        // 소계
+        fillRect(PAD + COLS[0].w, monthY, tableW - COLS[0].w, SUB_H, GREEN_LIGHT);
+        strokeRect(PAD, monthY, tableW, SUB_H);
+        text(`${weekRoundNo(rd.round._meta.week)}차 소계`, PAD + COLS[0].w + COLS[1].w / 2, monthY + SUB_H / 2, { color: GREEN, size: 13, weight: "bold" });
+        cx = PAD + COLS[0].w + COLS[1].w + COLS[2].w + COLS[3].w;
+        text(won(rd.subtotal), cx + COLS[4].w / 2, monthY + SUB_H / 2, { color: INK, size: 13, weight: "bold" });
+        cx += COLS[4].w;
+        text(won(rd.subtotalMargin), cx + COLS[5].w / 2, monthY + SUB_H / 2, { color: GREEN, size: 13, weight: "bold" });
+        monthY += SUB_H;
+      });
+
+      // 월 구분 세로 셀
+      fillRect(PAD, y, COLS[0].w, monthRows, ACCENT_LIGHT);
+      strokeRect(PAD, y, COLS[0].w, monthRows);
+      ctx.save();
+      ctx.translate(PAD + COLS[0].w / 2, y + monthRows / 2);
+      text(`${g.month}월`, 0, 0, { color: ACCENT, size: 18, weight: "bold" });
+      ctx.restore();
+
+      // 월 합계
+      fillRect(PAD, monthY, tableW, MONTH_TOTAL_H, ACCENT_LIGHT);
+      strokeRect(PAD, monthY, tableW, MONTH_TOTAL_H);
+      text(`${g.month}월 합계`, PAD + (tableW - COLS[4].w - COLS[5].w) / 2, monthY + MONTH_TOTAL_H / 2, { color: INK, size: 14, weight: "bold" });
+      cx = PAD + tableW - COLS[4].w - COLS[5].w;
+      text(won(g.monthTotal), cx + COLS[4].w / 2, monthY + MONTH_TOTAL_H / 2, { color: INK, size: 14, weight: "bold" });
+      text(won(g.monthMargin), cx + COLS[4].w + COLS[5].w / 2, monthY + MONTH_TOTAL_H / 2, { color: ACCENT, size: 14, weight: "bold" });
+      y += monthRows;
+    });
+
+    // 총합계
+    fillRect(PAD, y, tableW, TOTAL_H, NAVY);
+    text(`${year}년 ${periodLabel} 사업회계 총합계`, PAD + (tableW - COLS[4].w - COLS[5].w) / 2, y + TOTAL_H / 2, { color: "#fff", size: 15, weight: "bold" });
+    cx = PAD + tableW - COLS[4].w - COLS[5].w;
+    text(won(grandTotal), cx + COLS[4].w / 2, y + TOTAL_H / 2, { color: "#fff", size: 15, weight: "bold" });
+    text(won(grandMargin), cx + COLS[4].w + COLS[5].w / 2, y + TOTAL_H / 2, { color: "#fff", size: 15, weight: "bold" });
+    y += TOTAL_H + 20;
+
+    // 하단 날짜
+    text(`출력일: ${new Date().toLocaleDateString("ko-KR")}`, PAD + tableW, y + FOOTER_H / 2, { color: MUTED, size: 12, align: "right" });
+
+    // JPG 다운로드
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${year}년_${quarterName}_사업보고.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, "image/jpeg", 0.95);
   };
 
   const copyReport = () => {
@@ -1934,7 +2105,7 @@ function QuarterlyReport({ orders, rounds, w }) {
       <Title eyebrow="Quarterly" title="분기별 보고" sub="기간을 정하면 그 안의 차수들을 월별로 묶어서 사업회계 보고서를 만들어줘요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
+            <button style={S.btnOutline} onClick={downloadJpg} disabled={monthGroups.length === 0}>🖼️ JPG 다운로드</button>
             <button style={S.btnOutline} onClick={copyReport}>📋 보고서 복사</button>
           </div>
         } />
