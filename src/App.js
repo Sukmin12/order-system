@@ -2088,22 +2088,6 @@ function QuarterlyReport({ orders, rounds, w }) {
     }, "image/jpeg", 0.95);
   };
 
-  const copyReport = () => {
-    let text = `📊 ${year}년 ${periodLabel} 사업회계 보고\n\n`;
-    monthGroups.forEach(g => {
-      text += `■ ${g.month}월\n`;
-      g.roundData.forEach(rd => {
-        text += `  [${weekRoundNo(rd.round._meta.week)}차(${rd.round._meta.week})]\n`;
-        rd.items.forEach(it => { text += `   - ${it.name} ${it.qty}개 : ${won(it.total)} (마진 ${won(it.margin)})\n`; });
-        text += `   소계: ${won(rd.subtotal)} (마진 ${won(rd.subtotalMargin)})\n`;
-      });
-      text += `  ${g.month}월 합계: ${won(g.monthTotal)} (마진 ${won(g.monthMargin)})\n\n`;
-    });
-    text += `${year}년 ${periodLabel} 사업회계 총합계: ${won(grandTotal)} (마진 ${won(grandMargin)})`;
-    navigator.clipboard.writeText(text);
-    alert("보고서가 클립보드에 복사되었습니다!");
-  };
-
   return (
     <div>
       <Title eyebrow="Quarterly" title="분기별 보고" sub="기간을 정하면 그 안의 차수들을 월별로 묶어서 사업회계 보고서를 만들어줘요" w={w}
