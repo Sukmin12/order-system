@@ -374,7 +374,6 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   };
 
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
-  const remove = (id) => { if (!window.confirm("삭제할까요?")) return; const u = products.filter(p => p.id !== id); setProducts(u); saveSynced("order-products", u); if (selectedRowId === id) setSelectedRowId(null); };
 
   const filtered = sortList(products.filter(p => p.name.toLowerCase().includes(search.toLowerCase())));
 
