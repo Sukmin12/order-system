@@ -2415,17 +2415,17 @@ export default function App() {
         </div>
       )}
       {mob ? (
-        <div style={{ minHeight: "100vh", backgroundColor: C.surface }}>
+        <div style={{ minHeight: "100vh" }}>
           {/* 🤖 풀투리프레시 인디케이터 */}
           {isPulling && (
-            <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 54px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+            <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 66px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
               <div style={{ marginTop: 8, width: 36, height: 36, borderRadius: "50%", backgroundColor: C.surface, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.12)", transform: `rotate(${pullY / PULL_THRESHOLD * 360}deg)`, transition: "transform 0.05s" }}>
                 <span style={{ fontSize: 16 }}>{pullY >= PULL_THRESHOLD ? "✅" : "↓"}</span>
               </div>
             </div>
           )}
           <div style={{ transform: isPulling ? `translateY(${pullY}px)` : "none", transition: isPulling ? "none" : "transform 0.25s ease" }}>
-          <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 4px 10px rgba(15,46,79,0.06)", paddingTop: "env(safe-area-inset-top, 0px)", paddingLeft: 16, paddingRight: 16, display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 54 }}>
+          <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 4px 10px rgba(15,46,79,0.06)", paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)", paddingBottom: 12, paddingLeft: 16, paddingRight: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ 로이스6 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <SyncBadge status={syncStatus} />
@@ -2444,7 +2444,7 @@ export default function App() {
               </div>
             </div>
           )}
-          <div style={{ backgroundColor: C.bg, borderRadius: "20px 20px 0 0", marginTop: 18, minHeight: "calc(100vh - 72px)", padding: "20px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
+          <div style={{ padding: "28px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom, 0px)", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
             {nav.map(n => (
               <button key={n.id} onClick={() => goTo(n.id)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "10px 2px 8px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
