@@ -2440,7 +2440,7 @@ export default function App() {
               </div>
             </div>
           )}
-          <div style={{ padding: "16px 14px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
+          <div style={{ padding: "24px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom, 0px)", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
             {nav.map(n => (
               <button key={n.id} onClick={() => goTo(n.id)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "10px 2px 8px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
