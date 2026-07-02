@@ -1598,6 +1598,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
   const [newWeek, setNewWeek] = useState("첫째주");
   const [dateFilter, setDateFilter] = useState("latest"); // latest | oldest | manual
+  const [newRoundOpen, setNewRoundOpen] = useState(false); // 🤖 "새 차수 시작" 카드 — 기본은 접힌 상태
 
   // 🤖 차수별 판매물품 선택 팝업 — pickerTarget: null=신규 차수 생성, roundId=기존 차수 물품 수정
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1661,6 +1662,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
         productIds: pickerSelected,
       }];
       setRounds(u); saveSynced("order-rounds", u);
+      setNewRoundOpen(false);
     } else {
       // 기존 차수 판매물품 수정
       const u = rounds.map(r => r.id === pickerTarget ? { ...r, productIds: pickerSelected } : r);
@@ -1784,32 +1786,44 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
         </div>
       )}
 
-      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-        <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 새 차수 시작</div>
-        {activeRound && (
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 선택돼요. 아래 목록에서 다른 차수를 "이 차수로 선택"해도 돼요</div>
-        )}
-        <Grid cols={3} w={w}>
-          <Field label="연도">
-            <select style={S.select} value={newYear} onChange={e => setNewYear(Number(e.target.value))}>
-              {Array.from({ length: 6 }, (_, i) => thisYear - 1 + i).map(y => <option key={y} value={y}>{y}년</option>)}
-            </select>
-          </Field>
-          <Field label="월">
-            <select style={S.select} value={newMonth} onChange={e => setNewMonth(Number(e.target.value))}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
-            </select>
-          </Field>
-          <Field label="주차">
-            <select style={S.select} value={newWeek} onChange={e => setNewWeek(e.target.value)}>
-              {weekOptions.map(wk => <option key={wk}>{wk}</option>)}
-            </select>
-          </Field>
-        </Grid>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={S.btn()} onClick={openCreatePicker}>새 차수 시작</button>
-          <span style={{ fontSize: 13, color: C.muted }}>→ "{newYear}년 {newMonth}월 {newWeek}"로 생성돼요 (판매물품 먼저 선택)</span>
+      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}`, padding: newRoundOpen ? 20 : 0, overflow: "hidden" }}>
+        <div
+          onClick={() => setNewRoundOpen(o => !o)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", padding: newRoundOpen ? 0 : "16px 20px", marginBottom: newRoundOpen ? 10 : 0 }}
+        >
+          <div style={{ fontWeight: 800 }}>🗓 새 차수 시작</div>
+          <span style={{ fontSize: 12, color: C.accent, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+            {newRoundOpen ? "접기" : "펼치기"} <span style={{ fontSize: 10, transform: newRoundOpen ? "rotate(180deg)" : "none", display: "inline-block", transition: "transform 0.15s" }}>▾</span>
+          </span>
         </div>
+        {newRoundOpen && (
+          <>
+            {activeRound && (
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>현재 진행 중: <strong style={{ color: C.accent }}>{activeRound.name}</strong> · 새 차수를 시작하면 자동으로 선택돼요. 아래 목록에서 다른 차수를 "이 차수로 선택"해도 돼요</div>
+            )}
+            <Grid cols={3} w={w}>
+              <Field label="연도">
+                <select style={S.select} value={newYear} onChange={e => setNewYear(Number(e.target.value))}>
+                  {Array.from({ length: 6 }, (_, i) => thisYear - 1 + i).map(y => <option key={y} value={y}>{y}년</option>)}
+                </select>
+              </Field>
+              <Field label="월">
+                <select style={S.select} value={newMonth} onChange={e => setNewMonth(Number(e.target.value))}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+                </select>
+              </Field>
+              <Field label="주차">
+                <select style={S.select} value={newWeek} onChange={e => setNewWeek(e.target.value)}>
+                  {weekOptions.map(wk => <option key={wk}>{wk}</option>)}
+                </select>
+              </Field>
+            </Grid>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button style={S.btn()} onClick={openCreatePicker}>새 차수 시작</button>
+              <span style={{ fontSize: 13, color: C.muted }}>→ "{newYear}년 {newMonth}월 {newWeek}"로 생성돼요 (판매물품 먼저 선택)</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -2252,27 +2266,66 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // 🤖 풀투리프레시 — 모바일에서 아래로 당기면 페이지 새로고침
+  // (window.scrollY 대신 documentElement/body도 함께 체크 + preventDefault로 네이티브 스크롤/새로고침과 충돌 방지)
   const [pullY, setPullY] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
-  const touchStartY = useRef(0);
+  const touchStartY = useRef(null);
+  const draggingRef = useRef(false);
   const PULL_THRESHOLD = 80;
-  const handleTouchStart = (e) => {
-    if (window.scrollY === 0) touchStartY.current = e.touches[0].clientY;
-  };
-  const handleTouchMove = (e) => {
-    if (touchStartY.current === 0) return;
-    const dy = e.touches[0].clientY - touchStartY.current;
-    if (dy > 0 && window.scrollY === 0) {
-      setIsPulling(true);
-      setPullY(Math.min(dy * 0.4, PULL_THRESHOLD + 20));
-    }
-  };
-  const handleTouchEnd = () => {
-    if (pullY >= PULL_THRESHOLD) window.location.reload();
-    setIsPulling(false);
-    setPullY(0);
-    touchStartY.current = 0;
-  };
+
+  const getScrollTop = () =>
+    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+  useEffect(() => {
+    const onTouchStart = (e) => {
+      if (getScrollTop() <= 0) {
+        touchStartY.current = e.touches[0].clientY;
+        draggingRef.current = true;
+      } else {
+        touchStartY.current = null;
+        draggingRef.current = false;
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (!draggingRef.current || touchStartY.current === null) return;
+      const dy = e.touches[0].clientY - touchStartY.current;
+      if (dy > 0 && getScrollTop() <= 0) {
+        // 네이티브 브라우저 풀투리프레시/바운스가 제스처를 가로채지 못하게 막음
+        e.preventDefault();
+        setIsPulling(true);
+        setPullY(Math.min(dy * 0.4, PULL_THRESHOLD + 20));
+      } else {
+        // 위로 스와이프하거나 스크롤이 이미 됐으면 드래그 취소
+        draggingRef.current = false;
+        setIsPulling(false);
+        setPullY(0);
+      }
+    };
+
+    const onTouchEnd = () => {
+      setPullY(currentPullY => {
+        if (draggingRef.current && currentPullY >= PULL_THRESHOLD) {
+          window.location.reload();
+        }
+        return 0;
+      });
+      draggingRef.current = false;
+      touchStartY.current = null;
+      setIsPulling(false);
+    };
+
+    // passive:false 필수 — 이게 있어야 preventDefault()가 실제로 먹힘
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  }, []);
+
   const [products, setProducts] = useState(() => load("order-products", []));
   const [members, setMembers] = useState(() => load("order-members", []));
   const [orders, setOrders] = useState(() => load("order-orders", []));
@@ -2358,7 +2411,7 @@ export default function App() {
         </div>
       )}
       {mob ? (
-        <div onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} style={{ minHeight: "100vh" }}>
+        <div style={{ minHeight: "100vh" }}>
           {/* 🤖 풀투리프레시 인디케이터 */}
           {isPulling && (
             <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 54px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
