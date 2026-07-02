@@ -862,7 +862,8 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
         ))}
       </div>
 
-      <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+      <div style={{ ...S.card, padding: 0, overflow: "hidden", border: `1px solid ${C.border}` }}>
+        <div style={{ overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
@@ -910,6 +911,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
               })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -1455,8 +1457,9 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
           </div>
 
           {[...(aggTab === "product" ? ["product", "member"] : ["member", "product"])].map(section => section === "product" ? (
-            <div key="product" style={{ ...S.card, padding: 0, overflow: "auto", marginBottom: 16 }}>
+            <div key="product" style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
               <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>📦 물품별</div>
+              <div style={{ overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 500 : 600 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
@@ -1519,10 +1522,12 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                   </tr></tfoot>
                 )}
               </table>
+              </div>
             </div>
           ) : (
-            <div key="member" style={{ ...S.card, padding: 0, overflow: "auto", marginBottom: 16 }}>
+            <div key="member" style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
               <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>👤 인원별</div>
+              <div style={{ overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 540 : 660 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
@@ -1584,6 +1589,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                   </tr></tfoot>
                 )}
               </table>
+              </div>
             </div>
           ))}
         </>
@@ -2198,7 +2204,8 @@ function QuarterlyReport({ orders, rounds, w }) {
       {monthGroups.length === 0 ? (
         <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 40 }}>이 기간에 해당하는 차수가 없습니다. 연도/월을 다시 확인해보거나, 차수 이름이 "2026년 3월 첫째주"처럼 연도/월이 포함된 형식인지 확인해주세요.</div>
       ) : (
-        <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+        <div style={{ ...S.card, padding: 0, overflow: "hidden", border: `1px solid ${C.border}` }}>
+          <div style={{ overflow: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 720 }}>
             <thead>
               <tr style={{ backgroundColor: C.accent }}>
@@ -2254,6 +2261,7 @@ function QuarterlyReport({ orders, rounds, w }) {
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -2420,7 +2428,13 @@ export default function App() {
           {isPulling && (
             <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 66px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
               <div style={{ marginTop: 8, width: 36, height: 36, borderRadius: "50%", backgroundColor: C.surface, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.12)", transform: `rotate(${pullY / PULL_THRESHOLD * 360}deg)`, transition: "transform 0.05s" }}>
-                <span style={{ fontSize: 16 }}>{pullY >= PULL_THRESHOLD ? "✅" : "↓"}</span>
+                {pullY >= PULL_THRESHOLD ? (
+                  <span style={{ fontSize: 16 }}>✅</span>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: "block" }}>
+                    <path fill={C.accent} d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                  </svg>
+                )}
               </div>
             </div>
           )}
