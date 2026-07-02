@@ -491,7 +491,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
       </div>
 
       {/* 🤖 CRUD 바 — 항상 고정 표시 */}
-      <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
+      <div style={{ ...S.card, padding: 0, border: `1px solid ${C.border}`, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", height: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }}>{selectedProdIds.length}개 선택됨</span>
           <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length === 1 ? 1 : 0.35, cursor: selectedProdIds.length === 1 ? "pointer" : "default" }} onClick={() => {
@@ -503,6 +503,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
           <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
           <span style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>클릭 선택 · 더블클릭 수정</span>
         </div>
+        <div style={{ overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
@@ -545,6 +546,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
               })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -1312,13 +1314,14 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
             ))}
           </div>
 
-          <div style={{ ...S.card, padding: 0, overflow: "auto", border: `1px solid ${C.border}` }}>
-            {/* 🤖 CRUD 바 — 우상단 상시, 고정 높이로 레이아웃 안정 */}
+          <div style={{ ...S.card, padding: 0, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+            {/* 🤖 CRUD 바 — 우상단 상시, 고정 높이로 레이아웃 안정. 테이블 가로스크롤과 분리되어 항상 오른쪽 정렬 유지 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", height: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedOrderIds.length > 0 ? "visible" : "hidden" }}>{selectedOrderIds.length}건 선택됨</span>
               <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedOrderIds.length > 0 ? 1 : 0.35, cursor: selectedOrderIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedOrderIds.length > 0) bulkDeleteOrders(); }}>주문 삭제</button>
               <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedOrderIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedOrderIds([])}>선택 해제</button>
             </div>
+            <div style={{ overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 820 }}>
               <thead>
                 <tr style={{ backgroundColor: C.bg }}>
@@ -1434,6 +1437,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                 })()}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       ) : (
@@ -2411,7 +2415,7 @@ export default function App() {
         </div>
       )}
       {mob ? (
-        <div style={{ minHeight: "100vh" }}>
+        <div style={{ minHeight: "100vh", backgroundColor: C.surface }}>
           {/* 🤖 풀투리프레시 인디케이터 */}
           {isPulling && (
             <div style={{ position: "fixed", top: `calc(env(safe-area-inset-top, 0px) + 54px)`, left: 0, right: 0, zIndex: 500, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
@@ -2440,7 +2444,7 @@ export default function App() {
               </div>
             </div>
           )}
-          <div style={{ padding: "26px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
+          <div style={{ backgroundColor: C.bg, borderRadius: "20px 20px 0 0", marginTop: 18, minHeight: "calc(100vh - 72px)", padding: "20px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom, 0px)", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
             {nav.map(n => (
               <button key={n.id} onClick={() => goTo(n.id)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "10px 2px 8px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
