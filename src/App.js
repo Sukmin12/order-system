@@ -280,6 +280,21 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   const [selectedProdIds, setSelectedProdIds] = useState([]);
 
   const toggleProdSelect = (id) => setSelectedProdIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  // 🤖 모바일에는 더블클릭이 없어서 짧은 시간 안에 같은 행을 두 번 탭하면 더블클릭과 동일하게 수정 팝업을 연다
+  const lastTapRef = useRef({ id: null, time: 0 });
+  const handleRowTap = (p) => {
+    if (mob) {
+      const now = Date.now();
+      if (lastTapRef.current.id === p.id && now - lastTapRef.current.time < 350) {
+        lastTapRef.current = { id: null, time: 0 };
+        setSelectedProdIds([]);
+        startEdit(p);
+        return;
+      }
+      lastTapRef.current = { id: p.id, time: now };
+    }
+    toggleProdSelect(p.id);
+  };
   const toggleProdSelectAll = (ids) => {
     const allSelected = ids.every(id => selectedProdIds.includes(id));
     setSelectedProdIds(allSelected ? selectedProdIds.filter(id => !ids.includes(id)) : [...new Set([...selectedProdIds, ...ids])]);
@@ -490,18 +505,17 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         ))}
       </div>
 
-      {/* 🤖 CRUD 바 — 항상 고정 표시 */}
+      {/* 🤖 CRUD 바 — 항상 고정 표시. 모바일에서는 줄바꿈 허용 + 안내 문구 숨김으로 무너짐 방지 */}
       <div style={{ ...S.card, padding: 0, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", height: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, rowGap: 6, padding: "8px 10px", minHeight: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }}>{selectedProdIds.length}개 선택됨</span>
-          <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length === 1 ? 1 : 0.35, cursor: selectedProdIds.length === 1 ? "pointer" : "default" }} onClick={() => {
-            if (selectedProdIds.length !== 1) return;
+          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
+          <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, visibility: selectedProdIds.length === 1 ? "visible" : "hidden" }} onClick={() => {
             const p = filtered.find(x => x.id === selectedProdIds[0]);
             if (p) startEdit(p);
           }}>수정</button>
-          <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, opacity: selectedProdIds.length > 0 ? 1 : 0.35, cursor: selectedProdIds.length > 0 ? "pointer" : "default" }} onClick={() => { if (selectedProdIds.length > 0) bulkDeleteProducts(); }}>삭제</button>
-          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedProdIds([])}>선택 해제</button>
-          <span style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>클릭 선택 · 더블클릭 수정</span>
+          <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, visibility: selectedProdIds.length > 0 ? "visible" : "hidden" }} onClick={() => bulkDeleteProducts()}>삭제</button>
+          {!mob && <span style={{ fontSize: 11, color: C.muted, marginLeft: 8, whiteSpace: "nowrap" }}>클릭 선택 · 더블클릭 수정</span>}
         </div>
         <div style={{ overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
@@ -524,9 +538,9 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
                 const isSelected = selectedProdIds.includes(p.id);
                 return (
                   <tr key={p.id}
-                    onClick={() => toggleProdSelect(p.id)}
+                    onClick={() => handleRowTap(p)}
                     onDoubleClick={() => { setSelectedProdIds([]); startEdit(p); }}
-                    title="더블클릭하면 수정"
+                    title={mob ? "두 번 탭하면 수정" : "더블클릭하면 수정"}
                     style={{
                       cursor: "pointer",
                       backgroundColor: isSelected ? C.accentLight : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
@@ -607,6 +621,21 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
 
   // 🤖 클릭 = 체크박스 토글 + 행 하이라이트, 더블클릭 = 편집 팝업 열기
   const selectRow = (r) => { setSelectedRowId(r.id); toggleSelect(r.id); };
+
+  // 🤖 모바일에는 더블클릭이 없어서 짧은 시간 안에 같은 행을 두 번 탭하면 더블클릭과 동일하게 수정 팝업을 연다
+  const lastTapRef = useRef({ id: null, time: 0 });
+  const handleRowTap = (r) => {
+    if (mob) {
+      const now = Date.now();
+      if (lastTapRef.current.id === r.id && now - lastTapRef.current.time < 350) {
+        lastTapRef.current = { id: null, time: 0 };
+        openEdit(r);
+        return;
+      }
+      lastTapRef.current = { id: r.id, time: now };
+    }
+    selectRow(r);
+  };
 
   const openEdit = (r) => { setForm({ ...r }); setEditingId(r.id); setIsNewDraft(false); };
   const closeEdit = () => { setEditingId(null); setForm(null); setIsNewDraft(false); };
@@ -719,7 +748,6 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       <Title eyebrow="Members" title="회원 명단" sub="클릭하면 선택, 더블클릭하면 정보수정 팝업이 열려요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {selectedIds.length > 0 && <button style={S.btn(C.red)} onClick={bulkDelete}>🗑 선택 삭제 ({selectedIds.length})</button>}
             <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
             <button style={S.btn()} onClick={addRow}>+ 회원 추가</button>
           </div>
@@ -863,6 +891,16 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       </div>
 
       <div style={{ ...S.card, padding: 0, overflow: "hidden", border: `1px solid ${C.border}` }}>
+        {/* 🤖 선택 삭제 바 — 항상 같은 자리에 고정 표시(선택 유무와 무관하게 높이 유지)해서 선택 시 아래 내용이 밀리지 않도록 함 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, rowGap: 6, padding: "8px 10px", minHeight: 40, borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginRight: 4, visibility: selectedIds.length > 0 ? "visible" : "hidden" }}>{selectedIds.length}명 선택됨</span>
+          <button style={{ ...S.btnGhost, padding: "5px 10px", fontSize: 12, visibility: selectedIds.length > 0 ? "visible" : "hidden" }} onClick={() => setSelectedIds([])}>선택 해제</button>
+          <button style={{ ...S.btn(C.navy), padding: "5px 12px", fontSize: 12, visibility: selectedIds.length === 1 ? "visible" : "hidden" }} onClick={() => {
+            const r = filtered.find(x => x.id === selectedIds[0]);
+            if (r) openEdit(r);
+          }}>수정</button>
+          <button style={{ ...S.btn(C.red), padding: "5px 12px", fontSize: 12, visibility: selectedIds.length > 0 ? "visible" : "hidden" }} onClick={() => bulkDelete()}>선택 삭제</button>
+        </div>
         <div style={{ overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}>
           <thead>
@@ -885,9 +923,9 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                 const isSelected = selectedRowId === r.id;
                 return (
                   <tr key={r.id}
-                    onClick={() => selectRow(r)}
+                    onClick={() => handleRowTap(r)}
                     onDoubleClick={() => openEdit(r)}
-                    title="더블클릭하면 정보수정"
+                    title={mob ? "두 번 탭하면 정보수정" : "더블클릭하면 정보수정"}
                     style={{
                       cursor: "pointer",
                       backgroundColor: selectedIds.includes(r.id) ? C.accentLight : isSelected ? C.bg : (i % 2 === 1 ? "rgba(30,93,168,0.025)" : "transparent"),
