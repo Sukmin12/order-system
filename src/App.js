@@ -1246,6 +1246,64 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
     alert("보고서가 클립보드에 복사되었습니다!");
   };
 
+  // 🤖 인원별 펼침 영역 — 데스크톱 표/모바일 카드 양쪽에서 공용으로 쓰는 주문 건별 카드
+  const renderMemberOrderCard = (o) => (
+    <div key={o.id} style={{ ...S.card, backgroundColor: C.surface }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: 12.5, color: C.accent }}>🗓 {roundName(o.roundId)}</span>
+          <span style={{ fontSize: 11.5, color: C.muted }}>{fmtDate(o.date)}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => togglePaid(o.id)}
+            style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+          >
+            {o.paid ? "✓ 입금완료" : "○ 미입금"}
+          </button>
+          <button
+            onClick={() => toggleDelivered(o.id)}
+            style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+          >
+            {o.delivered ? "✓ 전달완료" : "○ 미전달"}
+          </button>
+        </div>
+      </div>
+      <div style={{ overflow: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 10, minWidth: 420 }}>
+        <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {o.items.map((it, ii) => (
+            <tr key={ii}>
+              <td style={{ padding: "6px 8px" }}>{it.name}</td>
+              <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                <input
+                  type="number" min="1" value={it.qty}
+                  onChange={e => updateItemQty(o.id, ii, e.target.value)}
+                  style={{ ...S.input, width: 56, padding: "5px 6px", textAlign: "center", fontSize: 12, display: "inline-block" }}
+                />
+              </td>
+              <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{won(it.cost * it.qty)}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right" }}>{won(it.price * it.qty)}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won((it.price - it.cost) * it.qty)}</td>
+              <td style={{ padding: "6px 4px", textAlign: "right" }}>
+                <button style={{ ...S.btn(C.red), padding: "3px 7px", fontSize: 10 }} onClick={() => removeItemFromOrder(o.id, ii)}>×</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: C.muted }}>입금액</span>
+          <input type="number" value={o.paidAmount || 0} onChange={e => updatePaidAmount(o.id, e.target.value)} style={{ ...S.input, width: 110, padding: "5px 8px" }} />
+        </div>
+        <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={() => remove(o.id)}>주문 삭제</button>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <Title eyebrow="Orders" title="주문 리스트" sub={`전체 ${orders.length}건`} w={w}
@@ -1283,11 +1341,59 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
         ))}
       </div>
 
-      {[...(aggTab === "product" ? ["product", "member"] : ["member", "product"])].map(section => section === "product" ? (
+      {[aggTab].map(section => section === "product" ? (
+        mob ? (
+          <div key="product" style={{ marginBottom: 16 }}>
+            <div style={{ padding: "0 2px 10px", fontWeight: 800, fontSize: 13, color: C.accent }}>📦 물품별</div>
+            {productList.length === 0 ? (
+              <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 30 }}>주문 데이터가 없습니다</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {productList.map(p => {
+                  const isOpen = expandedProduct === p.name;
+                  const buyers = Object.values(productBuyerDetail[p.name] || {}).sort((a, b) => b.qty - a.qty);
+                  return (
+                    <div key={p.name} style={{ ...S.card, padding: 14 }}>
+                      <div onClick={() => setExpandedProduct(isOpen ? null : p.name)} style={{ cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14.5, color: isOpen ? C.accent : C.ink }}>{p.name}</span>
+                          <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{p.qty}개</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5, flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ color: C.muted }}>매입 {won(p.cost)}</span>
+                          <span style={{ fontWeight: 700 }}>판매 {won(p.price)}</span>
+                          <span style={{ fontWeight: 700, color: C.green }}>마진 {won(p.margin)}</span>
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+                          <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 8 }}>구매자별 상세</div>
+                          {buyers.map(b => (
+                            <div key={b.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, gap: 8 }}>
+                              <span style={{ fontWeight: 600 }}>{b.name}</span>
+                              <span style={{ color: C.muted }}>{b.qty}개</span>
+                              <span style={{ fontWeight: 700 }}>{won(b.price)}</span>
+                              <span style={{ fontWeight: 700, color: C.green }}>{won(b.price - b.cost)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ ...S.card, backgroundColor: C.accentLight, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 13 }}>
+                  <span>합계 {productList.reduce((s,p)=>s+p.qty,0)}개</span>
+                  <span>{won(totalPrice)}</span>
+                  <span style={{ color: C.green }}>{won(totalMargin)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
             <div key="product" style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
               <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>📦 물품별</div>
               <div style={{ overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 500 : 600 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 600 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
                     {["물품","수량","총 매입가","총 판매가","총 마진"].map(h => (
@@ -1351,11 +1457,72 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
               </table>
               </div>
             </div>
+        )
           ) : (
+        mob ? (
+          <div key="member" style={{ marginBottom: 16 }}>
+            <div style={{ padding: "0 2px 10px", fontWeight: 800, fontSize: 13, color: C.accent }}>👤 인원별</div>
+            {memberList.length === 0 ? (
+              <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 30 }}>주문 데이터가 없습니다</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {memberList.map(m => {
+                  const unpaid = m.price - m.paid;
+                  const fullyPaid = unpaid <= 0;
+                  const fullyDelivered = m.orderCount > 0 && m.deliveredCount === m.orderCount;
+                  const isOpen = expandedMember === m.name;
+                  const items = Object.values(memberItemDetail[m.name] || {}).sort((a, b) => b.price - a.price);
+                  const memberOrders = (memberOrdersDetail[m.name] || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+                  return (
+                    <div key={m.name} style={{ ...S.card, padding: 14 }}>
+                      <div onClick={() => setExpandedMember(isOpen ? null : m.name)} style={{ cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14.5, color: isOpen ? C.accent : C.ink }}>{m.name}</span>
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => toggleMemberPaid(m.name, !fullyPaid)}
+                              style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: fullyPaid ? C.greenLight : C.redLight, color: fullyPaid ? C.green : C.red, fontSize: 10.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}
+                            >
+                              {fullyPaid ? "✓ 입금완료" : "○ 미입금"}
+                            </button>
+                            <button
+                              onClick={() => toggleMemberDelivered(m.name, !fullyDelivered)}
+                              style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: fullyDelivered ? C.accentLight : C.bg, color: fullyDelivered ? C.accent : C.muted, fontSize: 10.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}
+                            >
+                              {fullyDelivered ? "✓ 전달완료" : "○ 미전달"}
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: C.muted, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{items.map(it => `${it.name} ${it.qty}개`).join(", ")}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12.5, flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ color: C.muted }}>{m.qty}개</span>
+                          <span style={{ fontWeight: 700 }}>{won(m.price)}</span>
+                          <span style={{ fontWeight: 700, color: C.green }}>마진 {won(m.margin)}</span>
+                          <span style={{ fontWeight: 700, color: unpaid > 0 ? C.red : C.muted }}>{unpaid > 0 ? `미수 ${won(unpaid)}` : "완결"}</span>
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 10 }} onClick={e => e.stopPropagation()}>
+                          {memberOrders.map(o => renderMemberOrderCard(o))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ ...S.card, backgroundColor: C.accentLight, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 13 }}>
+                  <span>합계 {memberList.reduce((s,m)=>s+m.qty,0)}개</span>
+                  <span>{won(totalPrice)}</span>
+                  <span style={{ color: C.green }}>{won(totalMargin)}</span>
+                  <span style={{ color: C.red }}>{won(totalUnpaid)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
             <div key="member" style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
               <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>👤 인원별</div>
               <div style={{ overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: mob ? 720 : 860 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 860 }}>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
                     {["이름","입금상태","전달상태","구매물품","수량","총 판매가","총 마진","미수금"].map(h => (
@@ -1407,60 +1574,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                             <tr>
                               <td colSpan={8} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
                                 <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }} onClick={e => e.stopPropagation()}>
-                                  {memberOrders.map(o => (
-                                    <div key={o.id} style={{ ...S.card, backgroundColor: C.surface }}>
-                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                          <span style={{ fontWeight: 800, fontSize: 12.5, color: C.accent }}>🗓 {roundName(o.roundId)}</span>
-                                          <span style={{ fontSize: 11.5, color: C.muted }}>{fmtDate(o.date)}</span>
-                                        </div>
-                                        <div style={{ display: "flex", gap: 8 }}>
-                                          <button
-                                            onClick={() => togglePaid(o.id)}
-                                            style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.paid ? C.greenLight : C.redLight, color: o.paid ? C.green : C.red, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
-                                          >
-                                            {o.paid ? "✓ 입금완료" : "○ 미입금"}
-                                          </button>
-                                          <button
-                                            onClick={() => toggleDelivered(o.id)}
-                                            style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
-                                          >
-                                            {o.delivered ? "✓ 전달완료" : "○ 미전달"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 10 }}>
-                                        <thead><tr>{["물품","수량","매입가","판매가","마진",""].map(h => <th key={h} style={{ textAlign: h === "물품" ? "left" : "right", padding: "6px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                                        <tbody>
-                                          {o.items.map((it, ii) => (
-                                            <tr key={ii}>
-                                              <td style={{ padding: "6px 8px" }}>{it.name}</td>
-                                              <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                                                <input
-                                                  type="number" min="1" value={it.qty}
-                                                  onChange={e => updateItemQty(o.id, ii, e.target.value)}
-                                                  style={{ ...S.input, width: 56, padding: "5px 6px", textAlign: "center", fontSize: 12, display: "inline-block" }}
-                                                />
-                                              </td>
-                                              <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{won(it.cost * it.qty)}</td>
-                                              <td style={{ padding: "6px 8px", textAlign: "right" }}>{won(it.price * it.qty)}</td>
-                                              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.green }}>{won((it.price - it.cost) * it.qty)}</td>
-                                              <td style={{ padding: "6px 4px", textAlign: "right" }}>
-                                                <button style={{ ...S.btn(C.red), padding: "3px 7px", fontSize: 10 }} onClick={() => removeItemFromOrder(o.id, ii)}>×</button>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                          <span style={{ fontSize: 12, color: C.muted }}>입금액</span>
-                                          <input type="number" value={o.paidAmount || 0} onChange={e => updatePaidAmount(o.id, e.target.value)} style={{ ...S.input, width: 110, padding: "5px 8px" }} />
-                                        </div>
-                                        <button style={{ ...S.btn(C.red), marginLeft: "auto", padding: "6px 14px", fontSize: 11 }} onClick={() => remove(o.id)}>주문 삭제</button>
-                                      </div>
-                                    </div>
-                                  ))}
+                                  {memberOrders.map(o => renderMemberOrderCard(o))}
                                 </div>
                               </td>
                             </tr>
@@ -1481,7 +1595,8 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
               </table>
               </div>
             </div>
-          ))}
+        )
+      ))}
     </div>
   );
 }
