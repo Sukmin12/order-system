@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
+import { useAuth } from './AuthContext';
+import Login from './Login';
 // ── 색상 (로고 — 오직 주님 블루 그라데이션 톤) ────────────────────────
 const C = {
   bg: "#F4F8FC", surface: "#FFFFFF", ink: "#1B2A3D", muted: "#6E859C",
@@ -64,14 +66,15 @@ const SHEET_MAP = {
   "order-orders": "orders",
 };
 
-const saveSynced = async (key, value) => {
+const saveSynced = async (key, value, groupId) => {
   save(key, value);
   const tableName = SHEET_MAP[key];
-  if (!tableName) return;
+  if (!tableName || !groupId) return;
   try {
-    await supabase.from(tableName).delete().neq("id", "__never_matches__");
+    await supabase.from(tableName).delete().eq("groupId", groupId);
     if (value && value.length > 0) {
-      const { error } = await supabase.from(tableName).insert(value);
+      const withGroup = value.map(v => ({ ...v, groupId }));
+      const { error } = await supabase.from(tableName).insert(withGroup);
       if (error) console.error(tableName, "동기화 실패:", error.message);
     }
   } catch (err) {
@@ -79,13 +82,14 @@ const saveSynced = async (key, value) => {
   }
 };
 
-const fetchAllFromSheet = async () => {
+const fetchAllFromSheet = async (groupId) => {
+  if (!groupId) return null;
   try {
     const [membersRes, productsRes, roundsRes, ordersRes] = await Promise.all([
-      supabase.from("members").select("*"),
-      supabase.from("products").select("*"),
-      supabase.from("rounds").select("*"),
-      supabase.from("orders").select("*"),
+      supabase.from("members").select("*").eq("groupId", groupId),
+      supabase.from("products").select("*").eq("groupId", groupId),
+      supabase.from("rounds").select("*").eq("groupId", groupId),
+      supabase.from("orders").select("*").eq("groupId", groupId),
     ]);
     if (membersRes.error || productsRes.error || roundsRes.error || ordersRes.error) {
       console.error("Supabase 조회 오류:", membersRes.error || productsRes.error || roundsRes.error || ordersRes.error);
@@ -283,6 +287,7 @@ function EditableSelect({ value, onChange, options, placeholder = "입력 또는
 //  물품 관리
 // ════════════════════════════════════════════════════════════════════
 function ProductManager({ products, setProducts, orders, setOrders, w }) {
+  const { groupId } = useAuth();
   const mob = isMob(w);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -317,7 +322,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
     if (selectedProdIds.length === 0) return;
     if (!window.confirm(`선택한 ${selectedProdIds.length}개 물품을 삭제할까요?`)) return;
     const u = products.filter(p => !selectedProdIds.includes(p.id));
-    setProducts(u); saveSynced("order-products", u);
+    setProducts(u); saveSynced("order-products", u, groupId);
     setSelectedProdIds([]);
   };
 
@@ -375,29 +380,29 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
       const totalCost = items.reduce((s, it) => s + it.cost * it.qty, 0);
       return { ...o, items, totalPrice, totalCost, totalMargin: totalPrice - totalCost };
     });
-    if (touched) { setOrders(u); saveSynced("order-orders", u); }
+    if (touched) { setOrders(u); saveSynced("order-orders", u, groupId); }
   };
 
   const saveItem = () => {
     if (!form.name) return;
     let u;
     if (editing) {
-      u = products.map(p => p.id === editing ? { ...form, id: editing } : p);
+      u = products.map(p => p.id === editing ? { ...form, id: editing, groupId } : p);
       setEditing(null);
       syncOrdersWithProduct(editing, form);
     } else {
-      u = [...products, { ...form, id: Date.now() }];
+      u = [...products, { ...form, id: Date.now(), groupId }];
     }
-    setProducts(u); saveSynced("order-products", u);
+    setProducts(u); saveSynced("order-products", u, groupId);
     setForm(blank); setAdding(false);
   };
 
   const saveBulk = () => {
     const valid = rows.filter(r => r.name.trim());
     if (valid.length === 0) return;
-    const newItems = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), cost: r.cost, price: r.price }));
+    const newItems = valid.map(r => ({ id: Date.now() + Math.random(), name: r.name.trim(), cost: r.cost, price: r.price, groupId }));
     const u = [...products, ...newItems];
-    setProducts(u); saveSynced("order-products", u);
+    setProducts(u); saveSynced("order-products", u, groupId);
     setRows([blankRow()]); setAdding(false);
   };
 
@@ -584,6 +589,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
 //  회원 명단
 // ════════════════════════════════════════════════════════════════════
 function MemberRegistry({ members, setMembers, orders, rounds, w }) {
+  const { groupId } = useAuth();
   const mob = isMob(w);
   const [rows, setRows] = useState(members);
   const [search, setSearch] = useState("");
@@ -599,9 +605,9 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
   useEffect(() => { setRows(members); }, [members]);
 
   // 🤖 회원 데이터 항목 — 이름/전화번호/직분/비고만 사용
-  const blankRow = () => ({ id: Date.now() + Math.random(), name: "", phone: "", position: "", note: "" });
+  const blankRow = () => ({ id: Date.now() + Math.random(), name: "", phone: "", position: "", note: "", groupId });
 
-  const commit = (u) => { setRows(u); setMembers(u); saveSynced("order-members", u); };
+  const commit = (u) => { setRows(u); setMembers(u); saveSynced("order-members", u, groupId); };
 
   // "+ 회원 추가" → 바로 목록에 넣지 않고 팝업만 연다(저장 눌러야 진짜 추가됨)
   const addRow = () => {
@@ -680,6 +686,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       return {
         id: Date.now() + Math.random(),
         name: (c[0] || "").trim(), phone: (c[1] || "").trim(), position: (c[2] || "").trim(), note: (c[3] || "").trim(),
+        groupId,
       };
     }).filter(r => r.name && r.name !== "이름");
     if (parsed.length === 0) return;
@@ -973,6 +980,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
 //  주문 입력 (장바구니식)
 // ════════════════════════════════════════════════════════════════════
 function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
+  const { groupId } = useAuth();
   const mob = isMob(w);
   const [memberId, setMemberId] = useState("");
   const [pickProduct, setPickProduct] = useState("");
@@ -1041,9 +1049,10 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
       paidAmount: 0,
       delivered: false,
       date: todayStr(),
+      groupId,
     }));
     const u = [...orders, ...newOrders];
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
     setCart([]); setMemberId("");
   };
 
@@ -1134,6 +1143,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
 //  주문 리스트 (+ 입금관리 + 보고서 집계 통합)
 // ════════════════════════════════════════════════════════════════════
 function OrderList({ orders, setOrders, rounds, currentRound, w }) {
+  const { groupId } = useAuth();
   const mob = isMob(w);
   const [roundFilter, setRoundFilter] = useState(currentRound ? currentRound.name : "전체");
   const [aggTab, setAggTab] = useState("member");
@@ -1141,17 +1151,17 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 
   const togglePaid = (id) => {
     const u = orders.map(o => o.id === id ? { ...o, paid: !o.paid, paidAmount: !o.paid ? o.totalPrice : 0 } : o);
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
   const updatePaidAmount = (id, amt) => {
     const u = orders.map(o => o.id === id ? { ...o, paidAmount: Number(amt), paid: Number(amt) >= o.totalPrice } : o);
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
   const toggleDelivered = (id) => {
     const u = orders.map(o => o.id === id ? { ...o, delivered: !o.delivered } : o);
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
-  const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); saveSynced("order-orders", u); };
+  const remove = (id) => { if (!window.confirm("주문을 삭제할까요?")) return; const u = orders.filter(o => o.id !== id); setOrders(u); saveSynced("order-orders", u, groupId); };
 
   // 🤖 주문 내 특정 물품의 수량을 수정하면 그 주문의 합계(판매가/매입가/마진)도 자동 재계산
   const updateItemQty = (orderId, itemIndex, qty) => {
@@ -1163,7 +1173,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
       const totalCost = items.reduce((s, it) => s + it.cost * it.qty, 0);
       return { ...o, items, totalPrice, totalCost, totalMargin: totalPrice - totalCost };
     });
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
   const removeItemFromOrder = (orderId, itemIndex) => {
     const order = orders.find(o => o.id === orderId);
@@ -1176,7 +1186,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
       const totalCost = items.reduce((s, it) => s + it.cost * it.qty, 0);
       return { ...o, items, totalPrice, totalCost, totalMargin: totalPrice - totalCost };
     });
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
 
   // 🤖 차수 정렬키(최신 차수가 위로 오도록) — sortKey 없으면 이름에서 복구
@@ -1250,12 +1260,12 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   const toggleMemberPaid = (memberName, makePaid) => {
     const ids = new Set((memberOrdersDetail[memberName] || []).map(o => o.id));
     const u = orders.map(o => ids.has(o.id) ? { ...o, paid: makePaid, paidAmount: makePaid ? o.totalPrice : 0 } : o);
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
   const toggleMemberDelivered = (memberName, makeDelivered) => {
     const ids = new Set((memberOrdersDetail[memberName] || []).map(o => o.id));
     const u = orders.map(o => ids.has(o.id) ? { ...o, delivered: makeDelivered } : o);
-    setOrders(u); saveSynced("order-orders", u);
+    setOrders(u); saveSynced("order-orders", u, groupId);
   };
 
   // 🤖 물품별 → 구매한 사람별 상세(수량/매입가/판매가/마진) / 인원별 → 구매한 물품별 가격 — 행 클릭으로 펼쳐서 봄
@@ -1657,6 +1667,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
 //  차수 관리 (간소화 — 새 차수 시작 + 현재 차수 선택만)
 // ════════════════════════════════════════════════════════════════════
 function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
+  const { groupId } = useAuth();
   const mob = isMob(w);
   const thisYear = new Date().getFullYear();
   const [newYear, setNewYear] = useState(thisYear);
@@ -1708,9 +1719,9 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   // 🤖 팝업에서 바로 새 물품 추가 — 물품관리 전체 목록에도 저장되고, 이 차수에 자동으로 체크됨
   const addNewProduct = () => {
     if (!newProdName.trim()) return;
-    const np = { id: Date.now() + Math.random(), name: newProdName.trim(), cost: newProdCost, price: newProdPrice };
+    const np = { id: Date.now() + Math.random(), name: newProdName.trim(), cost: newProdCost, price: newProdPrice, groupId };
     const u = [...products, np];
-    setProducts(u); saveSynced("order-products", u);
+    setProducts(u); saveSynced("order-products", u, groupId);
     setPickerSelected(ps => [...ps, np.id]);
     setNewProdName(""); setNewProdCost(""); setNewProdPrice(""); setNewProdOpen(false);
   };
@@ -1725,13 +1736,14 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
         year: newYear, month: newMonth, week: newWeek,
         sortKey: makeSortKey(newYear, newMonth, newWeek),
         productIds: pickerSelected,
+        groupId,
       }];
-      setRounds(u); saveSynced("order-rounds", u);
+      setRounds(u); saveSynced("order-rounds", u, groupId);
       setNewRoundOpen(false);
     } else {
       // 기존 차수 판매물품 수정
       const u = rounds.map(r => r.id === pickerTarget ? { ...r, productIds: pickerSelected } : r);
-      setRounds(u); saveSynced("order-rounds", u);
+      setRounds(u); saveSynced("order-rounds", u, groupId);
     }
     setPickerOpen(false);
   };
@@ -1739,12 +1751,12 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
   const removeRound = (id) => {
     if (!window.confirm("이 차수를 삭제할까요? 차수에 속한 주문은 '차수 미지정'으로 남아요.")) return;
     const u = rounds.filter(r => r.id !== id);
-    setRounds(u); saveSynced("order-rounds", u);
+    setRounds(u); saveSynced("order-rounds", u, groupId);
   };
 
   const setActiveRound = (id) => {
     const u = rounds.map(r => ({ ...r, active: r.id === id }));
-    setRounds(u); saveSynced("order-rounds", u);
+    setRounds(u); saveSynced("order-rounds", u, groupId);
   };
 
   const orderCountOf = (roundId) => orders.filter(o => o.roundId === roundId).length;
@@ -1775,7 +1787,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
     const [moved] = reordered.splice(dragIndex, 1);
     reordered.splice(idx, 0, moved);
     const newRounds = reordered.slice().reverse();
-    setRounds(newRounds); saveSynced("order-rounds", newRounds);
+    setRounds(newRounds); saveSynced("order-rounds", newRounds, groupId);
     setDragIndex(null); setOverIndex(null);
   };
   const handleDragEnd = () => { setDragIndex(null); setOverIndex(null); };
@@ -2325,7 +2337,8 @@ function QuarterlyReport({ orders, rounds, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  앱 루트
 // ════════════════════════════════════════════════════════════════════
-export default function App() {
+function Dashboard() {
+  const { groupId, logout } = useAuth();
   const w = useWidth();
   const mob = isMob(w);
   const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
@@ -2405,7 +2418,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const data = await fetchAllFromSheet();
+      const data = await fetchAllFromSheet(groupId);
       if (cancelled) return;
       if (!data) { setSyncStatus("error"); return; }
 
@@ -2425,14 +2438,14 @@ export default function App() {
       setSyncStatus("synced");
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [groupId]);
 
   const uploadLocalToSheet = async () => {
     setSyncStatus("loading");
-    saveSynced("order-members", members);
-    saveSynced("order-products", products);
-    saveSynced("order-rounds", rounds);
-    saveSynced("order-orders", orders);
+    saveSynced("order-members", members, groupId);
+    saveSynced("order-products", products, groupId);
+    saveSynced("order-rounds", rounds, groupId);
+    saveSynced("order-orders", orders, groupId);
     setShowUploadPrompt(false);
     setTimeout(() => setSyncStatus("synced"), 1200);
   };
@@ -2494,6 +2507,7 @@ export default function App() {
             <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ 로이스6 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <SyncBadge status={syncStatus} />
+              <button onClick={logout} title="로그아웃" style={{ border: "none", backgroundColor: "transparent", fontSize: 18, cursor: "pointer", color: C.muted }}>🚪</button>
               <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
             </div>
           </div>
@@ -2538,6 +2552,9 @@ export default function App() {
             <div style={{ padding: "14px 20px", borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.muted }}>
               물품 {products.length}개 · 회원 {members.length}명 · 주문 {orders.length}건
             </div>
+            <div style={{ padding: "0 12px 14px" }}>
+              <button onClick={logout} style={{ ...S.btnGhost, width: "100%" }}>🚪 로그아웃</button>
+            </div>
           </div>
           <div style={{ flex: 1, padding: isTab(w) ? "24px" : "32px 36px", overflowY: "auto", maxHeight: "100vh" }}>
             {renderPage()}
@@ -2546,4 +2563,25 @@ export default function App() {
       )}
     </div>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  로그인 게이트 — 로딩/미로그인/그룹 미배정 상태를 분기하고, 그 외엔 대시보드 렌더링
+// ════════════════════════════════════════════════════════════════════
+function LoadingScreen({ text = "불러오는 중..." }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: C.bg, fontFamily: "'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif", color: C.muted, fontSize: 14 }}>
+      {text}
+    </div>
+  );
+}
+
+export default function App() {
+  const { user, groupId, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Login />;
+  if (!groupId) return <LoadingScreen text="그룹 정보를 찾을 수 없습니다. 관리자에게 문의해주세요." />;
+
+  return <Dashboard />;
 }
