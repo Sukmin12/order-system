@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-
+import { supabase } from './supabaseClient';
 // ── 색상 (로고 — 오직 주님 블루 그라데이션 톤) ────────────────────────
 const C = {
   bg: "#F4F8FC", surface: "#FFFFFF", ink: "#1B2A3D", muted: "#6E859C",
@@ -57,8 +57,6 @@ const useEscapeClose = (isOpen, onClose) => {
 };
 
 // ── 구글 시트 동기화 ─────────────────────────────────────────────────
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwTlJ2_ygAWMLTU2L0nXlEw7aF6wcPh6yKUvNmlJybItkUiHp_XINLCNtsk_qTzy2P1xw/exec";
-
 const SHEET_MAP = {
   "order-members": "members",
   "order-products": "products",
@@ -66,25 +64,41 @@ const SHEET_MAP = {
   "order-orders": "orders",
 };
 
-const saveSynced = (key, value) => {
+const saveSynced = async (key, value) => {
   save(key, value);
-  const sheetName = SHEET_MAP[key];
-  if (!sheetName) return;
-  fetch(SHEET_API_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sheet: sheetName, rows: value }),
-  }).catch(() => {});
+  const tableName = SHEET_MAP[key];
+  if (!tableName) return;
+  try {
+    await supabase.from(tableName).delete().neq("id", "__never_matches__");
+    if (value && value.length > 0) {
+      const { error } = await supabase.from(tableName).insert(value);
+      if (error) console.error(tableName, "동기화 실패:", error.message);
+    }
+  } catch (err) {
+    console.error(tableName, "동기화 실패:", err);
+  }
 };
 
 const fetchAllFromSheet = async () => {
   try {
-    const res = await fetch(SHEET_API_URL);
-    const json = await res.json();
-    if (json.result !== "success") return null;
-    return json.data;
-  } catch {
+    const [membersRes, productsRes, roundsRes, ordersRes] = await Promise.all([
+      supabase.from("members").select("*"),
+      supabase.from("products").select("*"),
+      supabase.from("rounds").select("*"),
+      supabase.from("orders").select("*"),
+    ]);
+    if (membersRes.error || productsRes.error || roundsRes.error || ordersRes.error) {
+      console.error("Supabase 조회 오류:", membersRes.error || productsRes.error || roundsRes.error || ordersRes.error);
+      return null;
+    }
+    return {
+      members: membersRes.data,
+      products: productsRes.data,
+      rounds: roundsRes.data,
+      orders: ordersRes.data,
+    };
+  } catch (err) {
+    console.error(err);
     return null;
   }
 };
