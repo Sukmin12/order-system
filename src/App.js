@@ -67,7 +67,7 @@ const SHEET_MAP = {
 };
 
 const saveSynced = async (key, value, groupId) => {
-  save(key, value);
+  if (groupId) save(`${key}-${groupId}`, value);
   const tableName = SHEET_MAP[key];
   if (!tableName || !groupId) return;
   try {
@@ -1143,7 +1143,7 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
 //  주문 리스트 (+ 입금관리 + 보고서 집계 통합)
 // ════════════════════════════════════════════════════════════════════
 function OrderList({ orders, setOrders, rounds, currentRound, w }) {
-  const { groupId } = useAuth();
+  const { groupId, groupName } = useAuth();
   const mob = isMob(w);
   const [roundFilter, setRoundFilter] = useState(currentRound ? currentRound.name : "전체");
   const [aggTab, setAggTab] = useState("member");
@@ -1298,7 +1298,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
   ];
 
   const copyReport = () => {
-    let text = `📦 로이스6 사업물품 주문 보고서 (${roundFilter === "전체" ? "전체 기간" : roundFilter})\n\n`;
+    let text = `📦 ${groupName} 사업물품 주문 보고서 (${roundFilter === "전체" ? "전체 기간" : roundFilter})\n\n`;
     text += `■ 물품별 집계\n`;
     productList.forEach(p => { text += `- ${p.name}: ${p.qty}개 / 매출 ${won(p.price)} / 마진 ${won(p.margin)}\n`; });
     text += `\n■ 인원별 집계\n`;
@@ -1962,6 +1962,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
 //  분기별 보고 (월/차수별 사업회계 집계)
 // ════════════════════════════════════════════════════════════════════
 function QuarterlyReport({ orders, rounds, w }) {
+  const { groupName } = useAuth();
   const mob = isMob(w);
   const thisYear = new Date().getFullYear();
   const thisMonth = new Date().getMonth() + 1;
@@ -2056,7 +2057,7 @@ function QuarterlyReport({ orders, rounds, w }) {
     }
     return periodLabel;
   })();
-  const reportTitle = `로이스6 ${quarterName} 사업보고`;
+  const reportTitle = `${groupName} ${quarterName} 사업보고`;
 
   // 🤖 A4 사이즈(1240×1754px) 캔버스에 표를 직접 그려서 JPG로 저장
   const downloadJpg = () => {
@@ -2338,12 +2339,14 @@ function QuarterlyReport({ orders, rounds, w }) {
 //  앱 루트
 // ════════════════════════════════════════════════════════════════════
 function Dashboard() {
-  const { groupId, logout } = useAuth();
+  const { groupId, groupName, logout } = useAuth();
   const w = useWidth();
   const mob = isMob(w);
   const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
   const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => { if (groupName) document.title = `${groupName} 주문관리`; }, [groupName]);
 
   // 🤖 풀투리프레시 — 모바일에서 아래로 당기면 페이지 새로고침
   // (window.scrollY 대신 documentElement/body도 함께 체크 + preventDefault로 네이티브 스크롤/새로고침과 충돌 방지)
@@ -2406,10 +2409,10 @@ function Dashboard() {
     };
   }, []);
 
-  const [products, setProducts] = useState(() => load("order-products", []));
-  const [members, setMembers] = useState(() => load("order-members", []));
-  const [orders, setOrders] = useState(() => load("order-orders", []));
-  const [rounds, setRounds] = useState(() => normalizeRounds(load("order-rounds", [])));
+  const [products, setProducts] = useState(() => load(`order-products-${groupId}`, []));
+  const [members, setMembers] = useState(() => load(`order-members-${groupId}`, []));
+  const [orders, setOrders] = useState(() => load(`order-orders-${groupId}`, []));
+  const [rounds, setRounds] = useState(() => normalizeRounds(load(`order-rounds-${groupId}`, [])));
   const [syncStatus, setSyncStatus] = useState("loading");
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
   useEscapeClose(menuOpen, () => setMenuOpen(false));
@@ -2423,7 +2426,7 @@ function Dashboard() {
       if (!data) { setSyncStatus("error"); return; }
 
       const sheetIsEmpty = (data.members || []).length === 0 && (data.products || []).length === 0 && (data.orders || []).length === 0;
-      const localHasData = (load("order-members", []).length > 0) || (load("order-products", []).length > 0) || (load("order-orders", []).length > 0);
+      const localHasData = (load(`order-members-${groupId}`, []).length > 0) || (load(`order-products-${groupId}`, []).length > 0) || (load(`order-orders-${groupId}`, []).length > 0);
 
       if (sheetIsEmpty && localHasData) {
         setShowUploadPrompt(true);
@@ -2431,10 +2434,10 @@ function Dashboard() {
         return;
       }
 
-      if (data.members) { setMembers(data.members); save("order-members", data.members); }
-      if (data.products) { setProducts(data.products); save("order-products", data.products); }
-      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save("order-rounds", normalized); }
-      if (data.orders) { setOrders(data.orders); save("order-orders", data.orders); }
+      if (data.members) { setMembers(data.members); save(`order-members-${groupId}`, data.members); }
+      if (data.products) { setProducts(data.products); save(`order-products-${groupId}`, data.products); }
+      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save(`order-rounds-${groupId}`, normalized); }
+      if (data.orders) { setOrders(data.orders); save(`order-orders-${groupId}`, data.orders); }
       setSyncStatus("synced");
     })();
     return () => { cancelled = true; };
@@ -2504,7 +2507,7 @@ function Dashboard() {
           )}
           <div style={{ transform: isPulling ? `translateY(${pullY}px)` : "none", transition: isPulling ? "none" : "transform 0.25s ease" }}>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 4px 10px rgba(15,46,79,0.06)", paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)", paddingBottom: 12, paddingLeft: 16, paddingRight: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ 로이스6 주문관리</div>
+            <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ {groupName} 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <SyncBadge status={syncStatus} />
               <button onClick={logout} title="로그아웃" style={{ border: "none", backgroundColor: "transparent", fontSize: 18, cursor: "pointer", color: C.muted }}>🚪</button>
@@ -2514,7 +2517,7 @@ function Dashboard() {
           {menuOpen && (
             <div style={{ position: "fixed", inset: 0, zIndex: 300, backgroundColor: "rgba(0,0,0,0.5)" }} onClick={() => setMenuOpen(false)}>
               <div style={{ position: "absolute", top: 0, left: 0, width: 250, height: "100%", backgroundColor: C.surface, padding: "20px 12px", paddingTop: "max(20px, calc(env(safe-area-inset-top, 0px) + 16px))" }} onClick={e => e.stopPropagation()}>
-                <div style={{ fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ 로이스6 주문관리</div>
+                <div style={{ fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ {groupName} 주문관리</div>
                 {nav.map(n => (
                   <button key={n.id} onClick={() => goTo(n.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: page === n.id ? C.accent : C.ink, marginBottom: 2, fontFamily: "inherit" }}>
                     <span style={{ fontSize: 18 }}>{n.icon}</span><span>{n.label}</span>
@@ -2538,7 +2541,7 @@ function Dashboard() {
         <div style={{ display: "flex" }}>
           <div style={{ width: isTab(w) ? 180 : 220, minHeight: "100vh", backgroundColor: C.surface, borderRight: `1px solid ${C.border}`, flexShrink: 0, position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "24px 20px 18px", borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>로이스6</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>{groupName}</div>
               <div style={{ fontSize: isTab(w) ? 17 : 19, fontWeight: 900, marginBottom: 8, lineHeight: 1.3 }}>사업물품 주문관리</div>
               <SyncBadge status={syncStatus} />
             </div>

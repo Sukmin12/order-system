@@ -6,21 +6,23 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [groupId, setGroupId] = useState(null);
+  const [groupName, setGroupName] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadProfile = async (currentUser) => {
-      if (!currentUser) { setGroupId(null); return; }
+      if (!currentUser) { setGroupId(null); setGroupName(null); return; }
       const { data, error } = await supabase
         .from("profiles")
-        .select("group_id")
+        .select("group_id, groups(name)")
         .eq("id", currentUser.id)
         .single();
       if (cancelled) return;
-      if (error) { console.error("프로필 조회 실패:", error.message); setGroupId(null); return; }
+      if (error) { console.error("프로필 조회 실패:", error.message); setGroupId(null); setGroupName(null); return; }
       setGroupId(data?.group_id ?? null);
+      setGroupName(data?.groups?.name ?? null);
     };
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -48,7 +50,7 @@ export function AuthProvider({ children }) {
   const logout = () => supabase.auth.signOut();
 
   return (
-    <AuthContext.Provider value={{ user, groupId, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, groupId, groupName, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
