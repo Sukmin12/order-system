@@ -2703,7 +2703,7 @@ function Dashboard() {
       setSyncStatus("synced");
     })();
     return () => { cancelled = true; };
-  }, [groupId, isHead]);
+  }, [groupId, isHead]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🤖 실시간 동기화 — 다른 기기/탭에서 저장한 변경사항을 자동으로 반영 (짧은 디바운스로 폭주하는 변경 이벤트를 하나로 묶음)
   useEffect(() => {
