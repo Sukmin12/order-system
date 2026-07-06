@@ -2676,6 +2676,13 @@ function Dashboard() {
     })();
   }, [isHead]);
 
+  const applyFetchedData = (data) => {
+    if (data.members) { setMembers(data.members); save(`order-members-${cacheScope}`, data.members); }
+    if (data.products) { setProducts(data.products); save(`order-products-${cacheScope}`, data.products); }
+    if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save(`order-rounds-${cacheScope}`, normalized); }
+    if (data.orders) { setOrders(data.orders); save(`order-orders-${cacheScope}`, data.orders); }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2692,14 +2699,37 @@ function Dashboard() {
         return;
       }
 
-      if (data.members) { setMembers(data.members); save(`order-members-${cacheScope}`, data.members); }
-      if (data.products) { setProducts(data.products); save(`order-products-${cacheScope}`, data.products); }
-      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save(`order-rounds-${cacheScope}`, normalized); }
-      if (data.orders) { setOrders(data.orders); save(`order-orders-${cacheScope}`, data.orders); }
+      applyFetchedData(data);
       setSyncStatus("synced");
     })();
     return () => { cancelled = true; };
   }, [groupId, isHead]);
+
+  // 🤖 실시간 동기화 — 다른 기기/탭에서 저장한 변경사항을 자동으로 반영 (짧은 디바운스로 폭주하는 변경 이벤트를 하나로 묶음)
+  useEffect(() => {
+    if (!groupId && !isHead) return;
+    let debounceTimer = null;
+    const refetch = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const data = await fetchAllFromSheet(groupId, isHead);
+        if (data) applyFetchedData(data);
+      }, 600);
+    };
+
+    const filterOpt = isHead ? {} : { filter: `groupId=eq.${groupId}` };
+    const channel = supabase.channel(`sync-${cacheScope}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "members", ...filterOpt }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "products", ...filterOpt }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rounds", ...filterOpt }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", ...filterOpt }, refetch)
+      .subscribe();
+
+    return () => {
+      clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, isHead]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const uploadLocalToSheet = async () => {
     setSyncStatus("loading");
