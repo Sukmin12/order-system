@@ -31,17 +31,18 @@ const won = (n) => `₩${Number(n || 0).toLocaleString("ko-KR")}`;
 const todayStr = () => new Date().toISOString().split("T")[0];
 const fmtDate = (d) => { if (!d) return "-"; const dt = new Date(d); return `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`; };
 
-// 🤖 구글시트 동기화 과정에서 productIds(배열)가 문자열로 깨져서 올 수도 있어 — 다시 배열로 복구
+// 🤖 productIds는 항상 문자열 배열로 통일 — products.id가 Supabase에서 문자열로 내려오기 때문에
+// (구글시트 동기화 과정에서 배열이 문자열로 깨져서 올 수도 있어 그 경우도 함께 복구)
 const normalizeRounds = (roundsArr) => {
   if (!Array.isArray(roundsArr)) return roundsArr;
   return roundsArr.map(r => {
-    if (Array.isArray(r.productIds)) return { ...r, productIds: r.productIds.map(Number).filter(n => !isNaN(n)) };
+    if (Array.isArray(r.productIds)) return { ...r, productIds: r.productIds.map(String) };
     if (typeof r.productIds === "string" && r.productIds.trim()) {
       try {
         const parsed = JSON.parse(r.productIds);
-        if (Array.isArray(parsed)) return { ...r, productIds: parsed.map(Number).filter(n => !isNaN(n)) };
+        if (Array.isArray(parsed)) return { ...r, productIds: parsed.map(String) };
       } catch {}
-      const split = r.productIds.split(",").map(s => Number(s.trim())).filter(n => !isNaN(n));
+      const split = r.productIds.split(",").map(s => s.trim()).filter(Boolean);
       if (split.length > 0) return { ...r, productIds: split };
     }
     return r;
@@ -82,14 +83,15 @@ const saveSynced = async (key, value, groupId) => {
   }
 };
 
-const fetchAllFromSheet = async (groupId) => {
-  if (!groupId) return null;
+const fetchAllFromSheet = async (groupId, isHead) => {
+  if (!groupId && !isHead) return null;
   try {
+    const scoped = (q) => isHead ? q : q.eq("groupId", groupId);
     const [membersRes, productsRes, roundsRes, ordersRes] = await Promise.all([
-      supabase.from("members").select("*").eq("groupId", groupId),
-      supabase.from("products").select("*").eq("groupId", groupId),
-      supabase.from("rounds").select("*").eq("groupId", groupId),
-      supabase.from("orders").select("*").eq("groupId", groupId),
+      scoped(supabase.from("members").select("*")),
+      scoped(supabase.from("products").select("*")),
+      scoped(supabase.from("rounds").select("*")),
+      scoped(supabase.from("orders").select("*")),
     ]);
     if (membersRes.error || productsRes.error || roundsRes.error || ordersRes.error) {
       console.error("Supabase 조회 오류:", membersRes.error || productsRes.error || roundsRes.error || ordersRes.error);
@@ -588,19 +590,22 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  회원 명단
 // ════════════════════════════════════════════════════════════════════
-function MemberRegistry({ members, setMembers, orders, rounds, w }) {
+function MemberRegistry({ members, setMembers, orders, rounds, w, isHead, groupsList = [] }) {
   const { groupId } = useAuth();
   const mob = isMob(w);
   const [rows, setRows] = useState(members);
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState(null); // 기존 회원 수정 대상 id (신규 작성 중엔 null)
   const [form, setForm] = useState(null);
-  const [isNewDraft, setIsNewDraft] = useState(false); // 🤖 신규 작성 중인지 — 저장 누르기 전까진 목록에 추가 안 함
+  const [isNewDraft, setIsNewDraft] = useState(false); // 🤖 신규 작성 중인지 — 저장 눌러야 진짜 추가됨
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedRowId, setSelectedRowId] = useState(null); // 🤖 행 선택(보더 강조) — 구매내역 버튼 노출용
   const [historyId, setHistoryId] = useState(null);
   const [historyTab, setHistoryTab] = useState("byRound"); // all | byRound
   const [sortMode, setSortMode] = useState("position"); // position | asc | desc
+  const [groupFilter, setGroupFilter] = useState("전체"); // 🤖 본부 계정 전용 — 여선교회별 필터
+
+  const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
 
   useEffect(() => { setRows(members); }, [members]);
 
@@ -711,7 +716,10 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
       return a.name.localeCompare(b.name, "ko");
     });
   };
-  const filtered = sortRows(rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase())));
+  const filtered = sortRows(rows.filter(r =>
+    r.name.toLowerCase().includes(search.toLowerCase()) &&
+    (!isHead || groupFilter === "전체" || r.groupId === groupFilter)
+  ));
   const editIndex = (!isNewDraft && editingId) ? filtered.findIndex(r => r.id === editingId) : -1;
   const goPrev = () => { if (editIndex > 0) openEdit(filtered[editIndex - 1]); };
   const goNext = () => { if (editIndex >= 0 && editIndex < filtered.length - 1) openEdit(filtered[editIndex + 1]); };
@@ -899,7 +907,15 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
         <textarea onPaste={handlePaste} placeholder="엑셀에서 해당 열들을 드래그해서 복사한 뒤 여기에 Ctrl+V 하세요" style={{ ...S.textareaSmall, minHeight: 56 }} defaultValue="" />
       </div>
 
-      <input style={{ ...S.input, marginBottom: 12, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <input style={{ ...S.input, maxWidth: 280 }} placeholder="이름 검색" value={search} onChange={e => setSearch(e.target.value)} />
+        {isHead && (
+          <select style={{ ...S.select, maxWidth: 200 }} value={groupFilter} onChange={e => setGroupFilter(e.target.value)}>
+            <option value="전체">전체 여선교회</option>
+            {groupsList.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        )}
+      </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {[
@@ -934,12 +950,13 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
               <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 130 }}>전화번호</th>
               <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 90 }}>직분</th>
               <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 140 }}>비고</th>
+              {isHead && <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, borderRight: `1px solid ${C.border}`, minWidth: 100 }}>여선교회</th>}
               <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, fontSize: 11.5, borderBottom: `2px solid ${C.border}`, minWidth: 180 }}>관리</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
+              ? <tr><td colSpan={isHead ? 8 : 7} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 회원이 없습니다. 위에서 붙여넣거나 + 회원 추가를 눌러보세요.</td></tr>
               : filtered.map((r, i) => {
                 const isSelected = selectedRowId === r.id;
                 return (
@@ -960,6 +977,7 @@ function MemberRegistry({ members, setMembers, orders, rounds, w }) {
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.phone || <span style={{ color: C.border }}>–</span>}</td>
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>{r.position || <span style={{ color: C.border }}>–</span>}</td>
                     <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, color: C.muted }}>{r.note || <span style={{ color: C.border }}>–</span>}</td>
+                    {isHead && <td style={{ padding: "11px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, fontSize: 12, color: C.accent, fontWeight: 600 }}>{groupNameOf(r.groupId)}</td>}
                     <td style={{ padding: "8px 10px", textAlign: "center", borderBottom: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "center", opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? "auto" : "none", transition: "opacity 0.1s" }}>
                         <button style={{ ...S.btnOutline, padding: "4px 10px", fontSize: 11 }} onClick={() => setHistoryId(r.id)}>🛒 구매내역</button>
@@ -989,14 +1007,14 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
 
   const memberOptions = members.map(m => ({ value: m.id, label: m.name }));
   const roundProducts = (currentRound?.productIds && currentRound.productIds.length > 0)
-    ? products.filter(p => currentRound.productIds.includes(p.id))
+    ? products.filter(p => currentRound.productIds.map(String).includes(String(p.id)))
     : products; // 🤖 차수에 판매물품이 지정 안 돼있으면(옛날 차수 등) 전체 물품 표시
   const productOptions = roundProducts.map(p => ({ value: p.id, label: `${p.name} — ${won(p.price)}` }));
 
   const addItem = () => {
     if (!memberId || !pickProduct) return;
-    const member = members.find(m => m.id === Number(memberId));
-    const product = products.find(p => p.id === Number(pickProduct));
+    const member = members.find(m => String(m.id) === String(memberId));
+    const product = products.find(p => String(p.id) === String(pickProduct));
     if (!member || !product) return;
 
     const existing = cart.find(c => c.memberId === member.id && c.productId === product.id);
@@ -1142,12 +1160,15 @@ function OrderEntry({ members, products, orders, setOrders, currentRound, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  주문 리스트 (+ 입금관리 + 보고서 집계 통합)
 // ════════════════════════════════════════════════════════════════════
-function OrderList({ orders, setOrders, rounds, currentRound, w }) {
+function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsList = [] }) {
   const { groupId, groupName } = useAuth();
   const mob = isMob(w);
-  const [roundFilter, setRoundFilter] = useState(currentRound ? currentRound.name : "전체");
-  const [aggTab, setAggTab] = useState("member");
+  const [roundFilter, setRoundFilter] = useState((currentRound && !isHead) ? currentRound.name : "전체");
+  const [aggTab, setAggTab] = useState(isHead ? "group" : "member");
   const [aggSort, setAggSort] = useState("priceHigh");
+  const [expandedGroups, setExpandedGroups] = useState([]);
+  const toggleGroupExpand = (gid) => setExpandedGroups(prev => prev.includes(gid) ? prev.filter(x => x !== gid) : [...prev, gid]);
+  const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
 
   const togglePaid = (id) => {
     const u = orders.map(o => o.id === id ? { ...o, paid: !o.paid, paidAmount: !o.paid ? o.totalPrice : 0 } : o);
@@ -1202,15 +1223,23 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
     return 0;
   };
 
+  // 🤖 본부는 여러 그룹의 차수를 합쳐서 보기 때문에, 같은 이름의 차수(그룹별로 따로 생성됨)를 하나로 합쳐서 표시
+  const roundsByName = {};
+  rounds.forEach(r => {
+    if (!roundsByName[r.name]) roundsByName[r.name] = [];
+    roundsByName[r.name].push(r);
+  });
   const roundOptions = [
     { value: "전체", label: "전체 차수" },
-    ...rounds.slice().sort((a, b) => roundSortKeyDirect(b) - roundSortKeyDirect(a)).map(r => ({ value: r.name, label: r.name + (r.active ? " (진행 중)" : "") })),
+    ...Object.keys(roundsByName)
+      .sort((a, b) => roundSortKeyDirect(roundsByName[b][0]) - roundSortKeyDirect(roundsByName[a][0]))
+      .map(name => ({ value: name, label: name + (!isHead && roundsByName[name].some(r => r.active) ? " (진행 중)" : "") })),
   ];
 
   const byRound = orders.filter(o => {
     if (roundFilter === "전체") return true;
-    const r = rounds.find(rr => rr.name === roundFilter);
-    return r && o.roundId === r.id;
+    const matching = roundsByName[roundFilter] || [];
+    return matching.some(r => o.roundId === r.id);
   });
 
   const totalPrice = byRound.reduce((s, o) => s + o.totalPrice, 0);
@@ -1255,6 +1284,27 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
     memberOrdersDetail[o.memberName].push(o);
   });
   const memberList = sortAgg(Object.values(memberAgg));
+
+  // 🤖 본부 전용 — 여선교회별 집계 (그룹별 총액/마진 + 그룹 내 주문 내역)
+  const groupAgg = {};
+  const groupOrdersDetail = {};
+  byRound.forEach(o => {
+    const gid = o.groupId || "미지정";
+    if (!groupAgg[gid]) groupAgg[gid] = { groupId: gid, name: groupNameOf(gid), qty: 0, cost: 0, price: 0, margin: 0, paid: 0, orderCount: 0, deliveredCount: 0 };
+    const g = groupAgg[gid];
+    g.qty += o.items.reduce((s, i) => s + i.qty, 0);
+    g.cost += o.totalCost;
+    g.price += o.totalPrice;
+    g.margin += o.totalMargin;
+    g.paid += o.paidAmount || 0;
+    g.orderCount += 1;
+    if (o.delivered) g.deliveredCount += 1;
+    if (!groupOrdersDetail[gid]) groupOrdersDetail[gid] = [];
+    groupOrdersDetail[gid].push(o);
+  });
+  const groupList = sortAgg(Object.values(groupAgg));
+  // 🤖 여선교회별 표와 펼침 상세 표의 수량/금액 컬럼 위치를 맞추기 위한 공용 너비
+  const GROUP_COL_W = { name: 220, qty: 90, price: 140, margin: 140, unpaid: 120 };
 
   // 🤖 인원별 표에서 입금/전달 배지를 누르면 그 사람의 (현재 필터 범위) 주문 전체를 한 번에 전환
   const toggleMemberPaid = (memberName, makePaid) => {
@@ -1392,7 +1442,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        {[{ id: "member", label: "👤 인원별" }, { id: "product", label: "📦 물품별" }].map(t => (
+        {[...(isHead ? [] : [{ id: "member", label: "👤 인원별" }]), { id: "product", label: "📦 물품별" }, ...(isHead ? [{ id: "group", label: "⛪ 여선교회별" }] : [])].map(t => (
           <button key={t.id} onClick={() => setAggTab(t.id)} style={{ border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", backgroundColor: aggTab === t.id ? C.accent : C.bg, color: aggTab === t.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{t.label}</button>
         ))}
       </div>
@@ -1514,6 +1564,171 @@ function OrderList({ orders, setOrders, rounds, currentRound, w }) {
                     <td style={{ padding: "11px 14px", textAlign: "right" }}>{won(totalCost)}</td>
                     <td style={{ padding: "11px 14px", textAlign: "right" }}>{won(totalPrice)}</td>
                     <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(totalMargin)}</td>
+                  </tr></tfoot>
+                )}
+              </table>
+              </div>
+            </div>
+        )
+          ) : section === "group" ? (
+        mob ? (
+          <div key="group" style={{ marginBottom: 16 }}>
+            <div style={{ padding: "0 2px 10px", fontWeight: 800, fontSize: 13, color: C.accent }}>⛪ 여선교회별</div>
+            {groupList.length === 0 ? (
+              <div style={{ ...S.card, textAlign: "center", color: C.muted, padding: 30 }}>주문 데이터가 없습니다</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {groupList.map(g => {
+                  const isOpen = expandedGroups.includes(g.groupId);
+                  const unpaid = g.price - g.paid;
+                  const groupOrders = (groupOrdersDetail[g.groupId] || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+                  return (
+                    <div key={g.groupId} style={{ ...S.card, padding: 14 }}>
+                      <div onClick={() => toggleGroupExpand(g.groupId)} style={{ cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14.5, color: isOpen ? C.accent : C.ink }}>{g.name}</span>
+                          <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{g.qty}개</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5, flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ fontWeight: 700 }}>{won(g.price)}</span>
+                          <span style={{ fontWeight: 700, color: C.green }}>마진 {won(g.margin)}</span>
+                          <span style={{ fontWeight: 700, color: unpaid > 0 ? C.red : C.muted }}>{unpaid > 0 ? `미수 ${won(unpaid)}` : "완결"}</span>
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 10 }} onClick={e => e.stopPropagation()}>
+                          {groupOrders.map(o => {
+                            const oUnpaid = o.totalPrice - (o.paidAmount || 0);
+                            return (
+                              <div key={o.id} style={{ ...S.card, backgroundColor: C.surface, padding: 12 }}>
+                                <div style={{ marginBottom: 8 }}>
+                                  {o.items.map((it, i) => (
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
+                                      <span style={{ fontWeight: 600 }}>{it.name}</span>
+                                      <span style={{ color: C.muted, flexShrink: 0, marginLeft: 8 }}>{it.qty}개 · {won(it.price * it.qty)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, flexWrap: "wrap", gap: 6, marginBottom: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                                  <span style={{ color: C.muted }}>{o.items.reduce((s, i) => s + i.qty, 0)}개</span>
+                                  <span style={{ fontWeight: 700 }}>{won(o.totalPrice)}</span>
+                                  <span style={{ fontWeight: 700, color: C.green }}>마진 {won(o.totalMargin)}</span>
+                                  <span style={{ fontWeight: 700, color: oUnpaid > 0 ? C.red : C.muted }}>{oUnpaid > 0 ? `미수 ${won(oUnpaid)}` : "완결"}</span>
+                                </div>
+                                <button
+                                  onClick={() => toggleDelivered(o.id)}
+                                  style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+                                >
+                                  {o.delivered ? "✓ 전달완료" : "○ 미전달"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ ...S.card, backgroundColor: C.accentLight, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 13 }}>
+                  <span>합계 {groupList.reduce((s,g)=>s+g.qty,0)}개</span>
+                  <span>{won(totalPrice)}</span>
+                  <span style={{ color: C.green }}>{won(totalMargin)}</span>
+                  <span style={{ color: C.red }}>{won(totalUnpaid)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+            <div key="group" style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
+              <div style={{ padding: "12px 14px", fontWeight: 800, fontSize: 13, color: C.accent, borderBottom: `1px solid ${C.border}` }}>⛪ 여선교회별</div>
+              <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640, tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: GROUP_COL_W.name }} /><col style={{ width: GROUP_COL_W.qty }} />
+                  <col style={{ width: GROUP_COL_W.price }} /><col style={{ width: GROUP_COL_W.margin }} /><col style={{ width: GROUP_COL_W.unpaid }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ backgroundColor: C.bg }}>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>여선교회</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>주문수량</th>
+                    {["총 판매가","총 마진","미수금"].map(h => (
+                      <th key={h} style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupList.length === 0
+                    ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
+                    : groupList.map(g => {
+                      const isOpen = expandedGroups.includes(g.groupId);
+                      const unpaid = g.price - g.paid;
+                      const groupOrders = (groupOrdersDetail[g.groupId] || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+                      return (
+                        <React.Fragment key={g.groupId}>
+                          <tr onClick={() => toggleGroupExpand(g.groupId)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: isOpen ? C.accentLight : "transparent" }}>
+                            <td style={{ padding: "11px 14px", fontWeight: 700, color: isOpen ? C.accent : C.ink }}>{g.name}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right" }}>{g.qty}개</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(g.price)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: C.green }}>{won(g.margin)}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: unpaid > 0 ? C.red : C.muted }}>{unpaid > 0 ? won(unpaid) : "-"}</td>
+                          </tr>
+                          {isOpen && (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                                <div style={{ padding: "12px 16px" }} onClick={e => e.stopPropagation()}>
+                                  <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 8 }}>주문 내역</div>
+                                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                                    <thead>
+                                      <tr>{["물품명","수량","판매가","마진","미수금","배부여부"].map(h => (
+                                        <th key={h} style={{ textAlign: h === "물품명" ? "left" : (h === "배부여부" ? "center" : "right"), padding: "5px 8px", color: C.muted, fontSize: 11, fontWeight: 700 }}>{h}</th>
+                                      ))}</tr>
+                                    </thead>
+                                    <tbody>
+                                      {groupOrders.map(o => {
+                                        const oUnpaid = o.totalPrice - (o.paidAmount || 0);
+                                        return (
+                                          <React.Fragment key={o.id}>
+                                            {o.items.map((it, i) => (
+                                              <tr key={i}>
+                                                <td style={{ padding: "5px 8px", fontWeight: 600, borderTop: i === 0 ? `1px solid ${C.border}` : "none" }}>{it.name}</td>
+                                                <td style={{ padding: "5px 8px", textAlign: "right", borderTop: i === 0 ? `1px solid ${C.border}` : "none" }}>{it.qty}개</td>
+                                                <td style={{ padding: "5px 8px", textAlign: "right", borderTop: i === 0 ? `1px solid ${C.border}` : "none" }}>{won(it.price * it.qty)}</td>
+                                                <td style={{ padding: "5px 8px", textAlign: "right", color: C.green, borderTop: i === 0 ? `1px solid ${C.border}` : "none" }}>{won((it.price - it.cost) * it.qty)}</td>
+                                                {i === 0 && (
+                                                  <>
+                                                    <td rowSpan={o.items.length} style={{ padding: "5px 8px", textAlign: "right", color: oUnpaid > 0 ? C.red : C.muted, verticalAlign: "middle", borderTop: `1px solid ${C.border}` }}>{oUnpaid > 0 ? won(oUnpaid) : "-"}</td>
+                                                    <td rowSpan={o.items.length} style={{ padding: "5px 8px", textAlign: "center", verticalAlign: "middle", borderTop: `1px solid ${C.border}` }}>
+                                                      <button
+                                                        onClick={() => toggleDelivered(o.id)}
+                                                        style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+                                                      >
+                                                        {o.delivered ? "✓ 전달완료" : "○ 미전달"}
+                                                      </button>
+                                                    </td>
+                                                  </>
+                                                )}
+                                              </tr>
+                                            ))}
+                                          </React.Fragment>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                </tbody>
+                {groupList.length > 0 && (
+                  <tfoot><tr style={{ backgroundColor: C.accentLight, fontWeight: 800 }}>
+                    <td style={{ padding: "11px 14px" }}>합계</td>
+                    <td style={{ padding: "11px 14px", textAlign: "right" }}>{groupList.reduce((s,g)=>s+g.qty,0)}개</td>
+                    <td style={{ padding: "11px 14px", textAlign: "right" }}>{won(totalPrice)}</td>
+                    <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(totalMargin)}</td>
+                    <td style={{ padding: "11px 14px", textAlign: "right", color: C.red }}>{won(totalUnpaid)}</td>
                   </tr></tfoot>
                 )}
               </table>
@@ -1712,7 +1927,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
     setPickerOpen(true);
   };
 
-  const togglePick = (id) => setPickerSelected(ps => ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id]);
+  const togglePick = (id) => setPickerSelected(ps => ps.map(String).includes(String(id)) ? ps.filter(x => String(x) !== String(id)) : [...ps, id]);
   const pickAll = () => setPickerSelected(products.map(p => p.id));
   const pickNone = () => setPickerSelected([]);
 
@@ -1847,8 +2062,8 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
               {filteredPickerProducts.length === 0
                 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontSize: 13 }}>등록된 물품이 없습니다</div>
                 : filteredPickerProducts.map(p => (
-                  <div key={p.id} onClick={() => togglePick(p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: pickerSelected.includes(p.id) ? C.accentLight : "transparent" }}>
-                    <input type="checkbox" readOnly checked={pickerSelected.includes(p.id)} style={{ width: 17, height: 17, pointerEvents: "none" }} />
+                  <div key={p.id} onClick={() => togglePick(p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: pickerSelected.map(String).includes(String(p.id)) ? C.accentLight : "transparent" }}>
+                    <input type="checkbox" readOnly checked={pickerSelected.map(String).includes(String(p.id))} style={{ width: 17, height: 17, pointerEvents: "none" }} />
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{p.name}</span>
                     <span style={{ fontSize: 12, color: C.muted }}>{won(p.price)}</span>
                   </div>
@@ -1961,7 +2176,7 @@ function RoundManager({ rounds, setRounds, orders, products, setProducts, w }) {
 // ════════════════════════════════════════════════════════════════════
 //  분기별 보고 (월/차수별 사업회계 집계)
 // ════════════════════════════════════════════════════════════════════
-function QuarterlyReport({ orders, rounds, w }) {
+function QuarterlyReport({ orders, rounds, w, isHead, groupsList = [] }) {
   const { groupName } = useAuth();
   const mob = isMob(w);
   const thisYear = new Date().getFullYear();
@@ -1973,6 +2188,16 @@ function QuarterlyReport({ orders, rounds, w }) {
   const [endMonth, setEndMonth] = useState(defaultStart + 2);
   const [startWeek, setStartWeek] = useState(1); // 1=첫째주
   const [endWeek, setEndWeek] = useState(5); // 5=다섯째주(=그 달의 끝까지)
+  const [viewMode, setViewMode] = useState("전체"); // 🤖 본부 계정 전용 — 전체 | 여선교회별
+  const [reportGroupFilter, setReportGroupFilter] = useState(""); // 🤖 여선교회별 모드에서 선택한 그룹
+  const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
+
+  // 🤖 여선교회별 모드에 들어오면 첫 번째 그룹을 기본 선택
+  useEffect(() => {
+    if (isHead && viewMode === "여선교회별" && !reportGroupFilter && groupsList.length > 0) {
+      setReportGroupFilter(groupsList[0].id);
+    }
+  }, [isHead, viewMode, reportGroupFilter, groupsList]);
 
   const weekOptions = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
   const weekRoundNo = (week) => { const i = weekOptions.indexOf(week); return i >= 0 ? i + 1 : 0; };
@@ -1999,10 +2224,15 @@ function QuarterlyReport({ orders, rounds, w }) {
   ];
   const applyQuarter = (q) => { setStartMonth(q.start); setEndMonth(q.end); setStartWeek(1); setEndWeek(5); };
 
+  // 🤖 본부의 "여선교회별" 모드에서는 선택한 그룹의 차수만 대상으로 함
+  const roundsSource = (isHead && viewMode === "여선교회별")
+    ? rounds.filter(r => r.groupId === reportGroupFilter)
+    : rounds;
+
   // 🤖 선택한 기간(월+주차 단위)에 속한 차수를 월별로 묶음 — 연도/월 정보를 이름에서도 복구해서 매칭
   const startKey = startMonth * 10 + startWeek;
   const endKey = endMonth * 10 + endWeek;
-  const roundsWithMeta = rounds.map(r => ({ ...r, _meta: parseRoundMeta(r) }));
+  const roundsWithMeta = roundsSource.map(r => ({ ...r, _meta: parseRoundMeta(r) }));
   const roundsInRange = roundsWithMeta
     .filter(r => {
       if (r._meta.year !== year || !r._meta.month) return false;
@@ -2057,7 +2287,8 @@ function QuarterlyReport({ orders, rounds, w }) {
     }
     return periodLabel;
   })();
-  const reportTitle = `${groupName} ${quarterName} 사업보고`;
+  const reportGroupName = (isHead && viewMode === "여선교회별") ? groupNameOf(reportGroupFilter) : groupName;
+  const reportTitle = `${reportGroupName} ${quarterName} 사업보고`;
 
   // 🤖 A4 사이즈(1240×1754px) 캔버스에 표를 직접 그려서 JPG로 저장
   const downloadJpg = () => {
@@ -2261,6 +2492,21 @@ function QuarterlyReport({ orders, rounds, w }) {
         </div>
       </div>
 
+      {isHead && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["전체", "여선교회별"].map(m => (
+              <button key={m} onClick={() => setViewMode(m)} style={{ border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", backgroundColor: viewMode === m ? C.accent : C.bg, color: viewMode === m ? "#fff" : C.muted, fontFamily: "inherit" }}>{m}</button>
+            ))}
+          </div>
+          {viewMode === "여선교회별" && (
+            <select style={{ ...S.select, width: "auto", minWidth: 160 }} value={reportGroupFilter} onChange={e => setReportGroupFilter(e.target.value)}>
+              {groupsList.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "inline-flex", alignItems: "center", gap: 12, background: C.gradient, color: "#fff", padding: mob ? "12px 18px" : "14px 24px", borderRadius: 14, marginBottom: 20, boxShadow: "0 6px 18px rgba(15,46,79,0.18)" }}>
         <span style={{ fontSize: mob ? 22 : 26 }}>📊</span>
         <div>
@@ -2339,7 +2585,9 @@ function QuarterlyReport({ orders, rounds, w }) {
 //  앱 루트
 // ════════════════════════════════════════════════════════════════════
 function Dashboard() {
-  const { groupId, groupName, logout } = useAuth();
+  const { groupId, groupName, role, logout } = useAuth();
+  const isHead = role === "head";
+  const cacheScope = groupId ?? "head";
   const w = useWidth();
   const mob = isMob(w);
   const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
@@ -2409,39 +2657,49 @@ function Dashboard() {
     };
   }, []);
 
-  const [products, setProducts] = useState(() => load(`order-products-${groupId}`, []));
-  const [members, setMembers] = useState(() => load(`order-members-${groupId}`, []));
-  const [orders, setOrders] = useState(() => load(`order-orders-${groupId}`, []));
-  const [rounds, setRounds] = useState(() => normalizeRounds(load(`order-rounds-${groupId}`, [])));
+  const [products, setProducts] = useState(() => load(`order-products-${cacheScope}`, []));
+  const [members, setMembers] = useState(() => load(`order-members-${cacheScope}`, []));
+  const [orders, setOrders] = useState(() => load(`order-orders-${cacheScope}`, []));
+  const [rounds, setRounds] = useState(() => normalizeRounds(load(`order-rounds-${cacheScope}`, [])));
+  const [groupsList, setGroupsList] = useState([]);
   const [syncStatus, setSyncStatus] = useState("loading");
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
   useEscapeClose(menuOpen, () => setMenuOpen(false));
   useEscapeClose(showUploadPrompt, () => setShowUploadPrompt(false));
 
+  // 🤖 본부(head) 계정이 그룹명을 표시/필터할 수 있도록 groups 목록을 가져옴
+  useEffect(() => {
+    if (!isHead) return;
+    (async () => {
+      const { data, error } = await supabase.from("groups").select("id, name").order("name");
+      if (!error && data) setGroupsList(data);
+    })();
+  }, [isHead]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const data = await fetchAllFromSheet(groupId);
+      const data = await fetchAllFromSheet(groupId, isHead);
       if (cancelled) return;
       if (!data) { setSyncStatus("error"); return; }
 
       const sheetIsEmpty = (data.members || []).length === 0 && (data.products || []).length === 0 && (data.orders || []).length === 0;
-      const localHasData = (load(`order-members-${groupId}`, []).length > 0) || (load(`order-products-${groupId}`, []).length > 0) || (load(`order-orders-${groupId}`, []).length > 0);
+      const localHasData = (load(`order-members-${cacheScope}`, []).length > 0) || (load(`order-products-${cacheScope}`, []).length > 0) || (load(`order-orders-${cacheScope}`, []).length > 0);
 
-      if (sheetIsEmpty && localHasData) {
+      if (!isHead && sheetIsEmpty && localHasData) {
         setShowUploadPrompt(true);
         setSyncStatus("error");
         return;
       }
 
-      if (data.members) { setMembers(data.members); save(`order-members-${groupId}`, data.members); }
-      if (data.products) { setProducts(data.products); save(`order-products-${groupId}`, data.products); }
-      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save(`order-rounds-${groupId}`, normalized); }
-      if (data.orders) { setOrders(data.orders); save(`order-orders-${groupId}`, data.orders); }
+      if (data.members) { setMembers(data.members); save(`order-members-${cacheScope}`, data.members); }
+      if (data.products) { setProducts(data.products); save(`order-products-${cacheScope}`, data.products); }
+      if (data.rounds) { const normalized = normalizeRounds(data.rounds); setRounds(normalized); save(`order-rounds-${cacheScope}`, normalized); }
+      if (data.orders) { setOrders(data.orders); save(`order-orders-${cacheScope}`, data.orders); }
       setSyncStatus("synced");
     })();
     return () => { cancelled = true; };
-  }, [groupId]);
+  }, [groupId, isHead]);
 
   const uploadLocalToSheet = async () => {
     setSyncStatus("loading");
@@ -2455,8 +2713,8 @@ function Dashboard() {
   const currentRound = rounds.find(r => r.active) || null;
 
   const nav = [
-    { id: "rounds", label: "차수 관리", icon: "🗓" },
-    { id: "entry", label: "주문 입력", icon: "🛒" },
+    { id: "rounds", label: "차수 관리", icon: "🗓", disabled: isHead },
+    { id: "entry", label: "주문 입력", icon: "🛒", disabled: isHead },
     { id: "orders", label: "주문 리스트", icon: "📋" },
     { id: "products", label: "물품 관리", icon: "📦" },
     { id: "members", label: "회원 명단", icon: "📇" },
@@ -2464,14 +2722,17 @@ function Dashboard() {
   ];
   const goTo = (id) => { setPage(id); setMenuOpen(false); };
 
+  // 🤖 본부 계정은 주문 입력/차수 관리를 못 쓰므로, 이전에 저장된 페이지가 그쪽이었다면 다른 곳으로 보냄
+  useEffect(() => { if (isHead && (page === "entry" || page === "rounds")) setPage("orders"); }, [isHead]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const renderPage = () => {
     switch (page) {
       case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} currentRound={currentRound} w={w} />;
-      case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} currentRound={currentRound} w={w} />;
+      case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} currentRound={currentRound} w={w} isHead={isHead} groupsList={groupsList} />;
       case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} setProducts={setProducts} w={w} />;
       case "products": return <ProductManager products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} w={w} />;
-      case "members": return <MemberRegistry members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} />;
-      case "quarterly": return <QuarterlyReport orders={orders} rounds={rounds} w={w} />;
+      case "members": return <MemberRegistry members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} isHead={isHead} groupsList={groupsList} />;
+      case "quarterly": return <QuarterlyReport orders={orders} rounds={rounds} w={w} isHead={isHead} groupsList={groupsList} />;
       default: return null;
     }
   };
@@ -2519,7 +2780,7 @@ function Dashboard() {
               <div style={{ position: "absolute", top: 0, left: 0, width: 250, height: "100%", backgroundColor: C.surface, padding: "20px 12px", paddingTop: "max(20px, calc(env(safe-area-inset-top, 0px) + 16px))" }} onClick={e => e.stopPropagation()}>
                 <div style={{ fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ {groupName} 주문관리</div>
                 {nav.map(n => (
-                  <button key={n.id} onClick={() => goTo(n.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: page === n.id ? C.accent : C.ink, marginBottom: 2, fontFamily: "inherit" }}>
+                  <button key={n.id} onClick={() => !n.disabled && goTo(n.id)} disabled={n.disabled} title={n.disabled ? "사용하지 않음" : undefined} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: n.disabled ? "default" : "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: n.disabled ? C.border : (page === n.id ? C.accent : C.ink), opacity: n.disabled ? 0.6 : 1, marginBottom: 2, fontFamily: "inherit" }}>
                     <span style={{ fontSize: 18 }}>{n.icon}</span><span>{n.label}</span>
                   </button>
                 ))}
@@ -2529,7 +2790,7 @@ function Dashboard() {
           <div style={{ padding: "28px 14px 16px", paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))", paddingLeft: "max(14px, env(safe-area-inset-left, 0px))", paddingRight: "max(14px, env(safe-area-inset-right, 0px))" }}>{renderPage()}</div>
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom, 0px)", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
             {nav.map(n => (
-              <button key={n.id} onClick={() => goTo(n.id)} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "10px 2px 8px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <button key={n.id} onClick={() => !n.disabled && goTo(n.id)} disabled={n.disabled} style={{ flex: 1, border: "none", backgroundColor: "transparent", padding: "10px 2px 8px", cursor: n.disabled ? "default" : "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, opacity: n.disabled ? 0.4 : 1 }}>
                 <span style={{ fontSize: 20 }}>{n.icon}</span>
                 <span style={{ fontSize: 10, fontWeight: page === n.id ? 700 : 400, color: page === n.id ? C.accent : C.muted }}>{n.label}</span>
               </button>
@@ -2547,7 +2808,7 @@ function Dashboard() {
             </div>
             <div style={{ padding: 12, flex: 1 }}>
               {nav.map(n => (
-                <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: isTab(w) ? 13 : 14, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: page === n.id ? C.accent : C.ink, marginBottom: 2, fontFamily: "inherit" }}>
+                <button key={n.id} onClick={() => !n.disabled && setPage(n.id)} disabled={n.disabled} title={n.disabled ? "사용하지 않음" : undefined} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8, border: "none", cursor: n.disabled ? "default" : "pointer", fontSize: isTab(w) ? 13 : 14, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: n.disabled ? C.border : (page === n.id ? C.accent : C.ink), opacity: n.disabled ? 0.6 : 1, marginBottom: 2, fontFamily: "inherit" }}>
                   <span>{n.icon}</span><span>{n.label}</span>
                 </button>
               ))}
@@ -2580,11 +2841,11 @@ function LoadingScreen({ text = "불러오는 중..." }) {
 }
 
 export default function App() {
-  const { user, groupId, loading } = useAuth();
+  const { user, groupId, role, loading } = useAuth();
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
-  if (!groupId) return <LoadingScreen text="그룹 정보를 찾을 수 없습니다. 관리자에게 문의해주세요." />;
+  if (!groupId && role !== "head") return <LoadingScreen text="그룹 정보를 찾을 수 없습니다. 관리자에게 문의해주세요." />;
 
   return <Dashboard />;
 }

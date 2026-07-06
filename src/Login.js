@@ -24,7 +24,15 @@ export default function Login() {
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from("groups").select("id, name").order("name");
-      if (!error && data) setGroups(data);
+      if (!error && data) {
+        // 🤖 본부는 항상 맨 위, 나머지는 가나다순
+        const sorted = [...data].sort((a, b) => {
+          if (a.name === "본부") return -1;
+          if (b.name === "본부") return 1;
+          return a.name.localeCompare(b.name, "ko");
+        });
+        setGroups(sorted);
+      }
       setLoadingGroups(false);
     })();
 
