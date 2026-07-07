@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import Login from './Login';
@@ -745,22 +746,12 @@ function MemberRegistry({ members, setMembers, orders, rounds, w, isHead, groups
   const goNext = () => { if (editIndex >= 0 && editIndex < filtered.length - 1) openEdit(filtered[editIndex + 1]); };
 
   const exportExcel = () => {
-    const header = ["번호", "이름", "전화번호", "직분", "비고"];
-    const escapeCell = (v) => {
-      const s = String(v == null ? "" : v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const body = filtered.map((r, i) => [i + 1, r.name, r.phone, r.position, r.note].map(escapeCell).join(","));
-    const csv = [header.join(","), ...body].join("\r\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `회원명단_${todayStr()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const header = ["번호", "이름", "전화번호", "직분", "비고", ...(isHead ? ["여선교회"] : [])];
+    const body = filtered.map((r, i) => [i + 1, r.name, r.phone, r.position, r.note, ...(isHead ? [groupNameOf(r.groupId)] : [])]);
+    const sheet = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "회원명단");
+    XLSX.writeFile(workbook, `회원명단_${todayStr()}.xlsx`);
   };
 
   // 🤖 구매내역 집계
@@ -797,7 +788,10 @@ function MemberRegistry({ members, setMembers, orders, rounds, w, isHead, groups
       <Title eyebrow="Members" title="회원 명단" sub="클릭하면 선택, 더블클릭하면 정보수정 팝업이 열려요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button style={S.btnOutline} onClick={exportExcel}>⬇️ 엑셀 다운로드</button>
+            <button
+              onClick={exportExcel}
+              style={{ backgroundColor: "#FFFFFF", color: "#1D6F42", border: "1.5px solid #1D6F42", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+            >📗 엑셀 다운로드</button>
             <button style={S.btn()} onClick={addRow}>+ 회원 추가</button>
           </div>
         } />
@@ -1385,8 +1379,13 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
     let text = `📦 ${groupName} 사업물품 주문 보고서 (${roundFilter === "전체" ? "전체 기간" : roundFilter})\n\n`;
     text += `■ 물품별 집계\n`;
     productList.forEach(p => { text += `- ${p.name}: ${p.qty}개 / 매출 ${won(p.price)} / 마진 ${won(p.margin)}\n`; });
-    text += `\n■ 인원별 집계\n`;
-    memberList.forEach(m => { text += `- ${m.name}: ${m.qty}개 / ${won(m.price)} (입금 ${won(m.paid)})\n`; });
+    if (isHead) {
+      text += `\n■ 여선교회별 집계\n`;
+      groupList.forEach(g => { text += `- ${g.name}: ${g.qty}개 / 매출 ${won(g.price)} / 마진 ${won(g.margin)} / 미수 ${won(g.price - g.paid)}\n`; });
+    } else {
+      text += `\n■ 인원별 집계\n`;
+      memberList.forEach(m => { text += `- ${m.name}: ${m.qty}개 / ${won(m.price)} (입금 ${won(m.paid)})\n`; });
+    }
     text += `\n■ 총계\n총 매출 ${won(totalPrice)} / 마진 ${won(totalMargin)} / 입금 ${won(totalPaid)} / 미수금 ${won(totalUnpaid)}`;
     navigator.clipboard.writeText(text);
     alert("보고서가 클립보드에 복사되었습니다!");
@@ -2244,6 +2243,7 @@ function QuarterlyReport({ orders, rounds, w, isHead, groupsList = [] }) {
   const [startWeek, setStartWeek] = useState(1); // 1=첫째주
   const [endWeek, setEndWeek] = useState(5); // 5=다섯째주(=그 달의 끝까지)
   const [viewMode, setViewMode] = useState("전체"); // 🤖 본부 계정 전용 — 전체 | 여선교회별
+  const [periodOpen, setPeriodOpen] = useState(!mob); // 🤖 모바일에서는 결과가 먼저 보이도록 기간 설정을 기본으로 접어둠
   const [reportGroupFilter, setReportGroupFilter] = useState(""); // 🤖 여선교회별 모드에서 선택한 그룹
   const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
 
@@ -2504,47 +2504,56 @@ function QuarterlyReport({ orders, rounds, w, isHead, groupsList = [] }) {
       <Title eyebrow="Quarterly" title="분기별 보고" sub="기간을 정하면 그 안의 차수들을 월별로 묶어서 사업회계 보고서를 만들어줘요" w={w}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button style={{ ...S.btnOutline, color: C.navy, border: `1.5px solid ${C.navy}` }} onClick={downloadJpg} disabled={monthGroups.length === 0}>🖼️ JPG 다운로드</button>
+            <button style={{ ...S.btnOutline, color: C.navy, border: `1.5px solid ${C.navy}` }} onClick={downloadJpg} disabled={monthGroups.length === 0}>⬇ JPG 다운로드</button>
           </div>
         } />
 
-      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}` }}>
-        <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 기간 설정</div>
-        <Grid cols={3} w={w}>
+      <div style={{ ...S.card, marginBottom: 20, backgroundColor: C.accentLight, border: `1.5px solid ${C.accent}`, padding: mob ? 0 : 16 }}>
+        {mob ? (
+          <div onClick={() => setPeriodOpen(o => !o)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", cursor: "pointer" }}>
+            <div style={{ fontWeight: 800, fontSize: 14 }}>🗓 기간 설정 <span style={{ fontWeight: 500, fontSize: 12, color: C.muted }}>· {year}년 {periodLabel}</span></div>
+            <span style={{ fontSize: 12, color: C.accent, fontWeight: 700, whiteSpace: "nowrap" }}>{periodOpen ? "접기 ▲" : "펼치기 ▼"}</span>
+          </div>
+        ) : (
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>🗓 기간 설정</div>
+        )}
+        {(!mob || periodOpen) && (
+        <div style={{ padding: mob ? "0 16px 16px" : 0 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
           <Field label="연도">
-            <select style={S.select} value={year} onChange={e => setYear(Number(e.target.value))}>
+            <select style={{ ...S.select, width: 92 }} value={year} onChange={e => setYear(Number(e.target.value))}>
               {Array.from({ length: 6 }, (_, i) => thisYear - 1 + i).map(y => <option key={y} value={y}>{y}년</option>)}
             </select>
           </Field>
           <Field label="시작월">
-            <select style={S.select} value={startMonth} onChange={e => setStartMonth(Number(e.target.value))}>
+            <select style={{ ...S.select, width: 76 }} value={startMonth} onChange={e => setStartMonth(Number(e.target.value))}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
             </select>
           </Field>
           <Field label="시작 주차">
-            <select style={S.select} value={startWeek} onChange={e => setStartWeek(Number(e.target.value))}>
+            <select style={{ ...S.select, width: 104 }} value={startWeek} onChange={e => setStartWeek(Number(e.target.value))}>
               {weekOptions.map((wk, i) => <option key={wk} value={i + 1}>{wk}부터</option>)}
             </select>
           </Field>
-        </Grid>
-        <Grid cols={3} w={w}>
           <Field label="종료월">
-            <select style={S.select} value={endMonth} onChange={e => setEndMonth(Number(e.target.value))}>
+            <select style={{ ...S.select, width: 76 }} value={endMonth} onChange={e => setEndMonth(Number(e.target.value))}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
             </select>
           </Field>
           <Field label="종료 주차">
-            <select style={S.select} value={endWeek} onChange={e => setEndWeek(Number(e.target.value))}>
+            <select style={{ ...S.select, width: 104 }} value={endWeek} onChange={e => setEndWeek(Number(e.target.value))}>
               {weekOptions.map((wk, i) => <option key={wk} value={i + 1}>{wk}까지</option>)}
             </select>
           </Field>
-        </Grid>
+        </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {quarterPresets.map(q => (
             <button key={q.label} onClick={() => applyQuarter(q)}
               style={{ borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? C.navy : C.surface, color: startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? "#fff" : C.muted, fontFamily: "inherit", border: `1px solid ${startMonth === q.start && endMonth === q.end && startWeek === 1 && endWeek === 5 ? C.navy : C.border}` }}>{q.label}</button>
           ))}
         </div>
+        </div>
+        )}
       </div>
 
       {isHead && (
