@@ -288,7 +288,7 @@ function EditableSelect({ value, onChange, options, placeholder = "입력 또는
 // ════════════════════════════════════════════════════════════════════
 //  물품 관리
 // ════════════════════════════════════════════════════════════════════
-function ProductManager({ products, setProducts, orders, setOrders, w }) {
+function ProductManager({ products, setProducts, orders, setOrders, w, isHead, groupsList = [] }) {
   const { groupId } = useAuth();
   const mob = isMob(w);
   const [adding, setAdding] = useState(false);
@@ -297,8 +297,17 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   const [form, setForm] = useState(blank);
   const setF = (f, v) => setForm(p => ({ ...p, [f]: v }));
   const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState("asc");
+  // 🤖 정렬 — 같은 버튼을 다시 누르면 방향(오름/내림)이 번갈아 바뀜
+  const [sortKey, setSortKey] = useState("name"); // name | price
+  const [sortDir, setSortDir] = useState({ name: "asc", price: "desc" });
+  const clickSort = (key) => {
+    if (sortKey === key) setSortDir(d => ({ ...d, [key]: d[key] === "asc" ? "desc" : "asc" }));
+    else setSortKey(key);
+  };
   const [selectedProdIds, setSelectedProdIds] = useState([]);
+  const [groupFilter, setGroupFilter] = useState("전체"); // 🤖 본부 계정 전용 — 여선교회별 필터
+
+  const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
 
   const toggleProdSelect = (id) => setSelectedProdIds(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   // 🤖 모바일에는 더블클릭이 없어서 짧은 시간 안에 같은 행을 두 번 탭하면 더블클릭과 동일하게 수정 팝업을 연다
@@ -353,14 +362,13 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
   const findDuplicate = (name, excludeId) => {
     const n = name.trim();
     if (!n) return null;
-    return products.find(p => p.name.trim() === n && p.id !== excludeId) || null;
+    return products.find(p => p.name.trim() === n && p.id !== excludeId && (!isHead || p.groupId === groupId)) || null;
   };
 
   const sortList = (list) => {
-    if (sortMode === "desc") return [...list].sort((a, b) => b.name.localeCompare(a.name, "ko"));
-    if (sortMode === "priceHigh") return [...list].sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
-    if (sortMode === "priceLow") return [...list].sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
-    return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    const dir = sortDir[sortKey];
+    if (sortKey === "price") return [...list].sort((a, b) => dir === "asc" ? (Number(a.price) || 0) - (Number(b.price) || 0) : (Number(b.price) || 0) - (Number(a.price) || 0));
+    return [...list].sort((a, b) => dir === "asc" ? a.name.localeCompare(b.name, "ko") : b.name.localeCompare(a.name, "ko"));
   };
 
   // 🤖 물품 정보를 수정하면 그 물품을 담고 있던 과거 주문들도 같이 갱신(이름/매입가/판매가 + 주문 합계 재계산)
@@ -410,14 +418,16 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
 
   const startEdit = (p) => { setForm({ name: p.name, cost: p.cost, price: p.price }); setEditing(p.id); setAdding(true); };
 
-  const filtered = sortList(products.filter(p => p.name.toLowerCase().includes(search.toLowerCase())));
+  const filtered = sortList(products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) &&
+    (!isHead || groupFilter === "전체" || p.groupId === groupFilter)
+  ));
 
   const sortOptions = [
-    { id: "asc", label: "가나다 오름차순" },
-    { id: "desc", label: "가나다 내림차순" },
-    { id: "priceHigh", label: "판매가 높은순" },
-    { id: "priceLow", label: "판매가 낮은순" },
+    { id: "name", label: "가나다순" },
+    { id: "price", label: "판매가순" },
   ];
+  const sortArrow = (key) => sortDir[key] === "asc" ? "↑" : "↓";
 
   return (
     <div>
@@ -518,11 +528,19 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
         </div>
       )}
 
-      <input style={{ ...S.input, marginBottom: 12 }} placeholder="품명 검색" value={search} onChange={e => setSearch(e.target.value)} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <input style={{ ...S.input, maxWidth: 280 }} placeholder="품명 검색" value={search} onChange={e => setSearch(e.target.value)} />
+        {isHead && (
+          <select style={{ ...S.select, maxWidth: 200 }} value={groupFilter} onChange={e => setGroupFilter(e.target.value)}>
+            <option value="전체">전체 여선교회</option>
+            {groupsList.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        )}
+      </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {sortOptions.map(s => (
-          <button key={s.id} onClick={() => setSortMode(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortMode === s.id ? C.accent : C.bg, color: sortMode === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
+          <button key={s.id} onClick={() => clickSort(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: sortKey === s.id ? C.accent : C.bg, color: sortKey === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label} {sortArrow(s.id)}</button>
         ))}
       </div>
 
@@ -549,11 +567,12 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
               {["품명","매입원가(입고가)","판매가","마진"].map(h => (
                 <th key={h} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap" }}>{h}</th>
               ))}
+              {isHead && <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", minWidth: 100 }}>여선교회</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
+              ? <tr><td colSpan={isHead ? 7 : 6} style={{ padding: 40, textAlign: "center", color: C.muted }}>등록된 물품이 없습니다</td></tr>
               : filtered.map((p, i) => {
                 const m = (Number(p.price) || 0) - (Number(p.cost) || 0);
                 const isSelected = selectedProdIds.includes(p.id);
@@ -576,6 +595,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w }) {
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted }}>{won(p.cost)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 600 }}>{won(p.price)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
+                    {isHead && <td style={{ padding: "12px 10px", textAlign: "center", fontSize: 12, color: C.accent, fontWeight: 600 }}>{groupNameOf(p.groupId)}</td>}
                   </tr>
                 );
               })}
@@ -1165,7 +1185,13 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
   const mob = isMob(w);
   const [roundFilter, setRoundFilter] = useState((currentRound && !isHead) ? currentRound.name : "전체");
   const [aggTab, setAggTab] = useState(isHead ? "group" : "member");
-  const [aggSort, setAggSort] = useState("priceHigh");
+  // 🤖 정렬 — 같은 버튼을 다시 누르면 방향(오름/내림)이 번갈아 바뀜
+  const [aggSortKey, setAggSortKey] = useState("price"); // price | qty | name
+  const [aggSortDir, setAggSortDir] = useState({ price: "desc", qty: "desc", name: "asc" });
+  const clickAggSort = (key) => {
+    if (aggSortKey === key) setAggSortDir(d => ({ ...d, [key]: d[key] === "asc" ? "desc" : "asc" }));
+    else setAggSortKey(key);
+  };
   const [expandedGroups, setExpandedGroups] = useState([]);
   const toggleGroupExpand = (gid) => setExpandedGroups(prev => prev.includes(gid) ? prev.filter(x => x !== gid) : [...prev, gid]);
   const groupNameOf = (gid) => groupsList.find(g => g.id === gid)?.name || "미지정";
@@ -1252,11 +1278,10 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
 
   // ── 집계 ──
   const sortAgg = (list) => {
-    if (aggSort === "priceLow") return [...list].sort((a, b) => a.price - b.price);
-    if (aggSort === "qtyHigh") return [...list].sort((a, b) => b.qty - a.qty);
-    if (aggSort === "qtyLow") return [...list].sort((a, b) => a.qty - b.qty);
-    if (aggSort === "nameAsc") return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
-    return [...list].sort((a, b) => b.price - a.price);
+    const dir = aggSortDir[aggSortKey];
+    if (aggSortKey === "qty") return [...list].sort((a, b) => dir === "asc" ? a.qty - b.qty : b.qty - a.qty);
+    if (aggSortKey === "name") return [...list].sort((a, b) => dir === "asc" ? a.name.localeCompare(b.name, "ko") : b.name.localeCompare(a.name, "ko"));
+    return [...list].sort((a, b) => dir === "asc" ? a.price - b.price : b.price - a.price);
   };
   const productAgg = {};
   byRound.forEach(o => o.items.forEach(it => {
@@ -1304,7 +1329,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
   });
   const groupList = sortAgg(Object.values(groupAgg));
   // 🤖 여선교회별 표와 펼침 상세 표의 수량/금액 컬럼 위치를 맞추기 위한 공용 너비
-  const GROUP_COL_W = { name: 220, qty: 90, price: 140, margin: 140, unpaid: 120 };
+  const GROUP_COL_W = { name: 220, delivered: 110, qty: 90, price: 140, margin: 140, unpaid: 120 };
 
   // 🤖 인원별 표에서 입금/전달 배지를 누르면 그 사람의 (현재 필터 범위) 주문 전체를 한 번에 전환
   const toggleMemberPaid = (memberName, makePaid) => {
@@ -1314,6 +1339,12 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
   };
   const toggleMemberDelivered = (memberName, makeDelivered) => {
     const ids = new Set((memberOrdersDetail[memberName] || []).map(o => o.id));
+    const u = orders.map(o => ids.has(o.id) ? { ...o, delivered: makeDelivered } : o);
+    setOrders(u); saveSynced("order-orders", u, groupId);
+  };
+  // 🤖 여선교회별 표에서도 접힌 상태에서 그 그룹 주문 전체의 전달 상태를 한 번에 전환
+  const toggleGroupDelivered = (gid, makeDelivered) => {
+    const ids = new Set((groupOrdersDetail[gid] || []).map(o => o.id));
     const u = orders.map(o => ids.has(o.id) ? { ...o, delivered: makeDelivered } : o);
     setOrders(u); saveSynced("order-orders", u, groupId);
   };
@@ -1340,12 +1371,15 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
   }));
 
   const aggSortOptions = [
-    { id: "priceHigh", label: "금액 높은순" },
-    { id: "priceLow", label: "금액 낮은순" },
-    { id: "qtyHigh", label: "수량 많은순" },
-    { id: "qtyLow", label: "수량 적은순" },
-    { id: "nameAsc", label: "가나다순" },
+    { id: "price", label: "금액순" },
+    { id: "qty", label: "수량순" },
+    { id: "name", label: "가나다순" },
   ];
+  const aggSortArrow = (key) => {
+    const dir = aggSortDir[key];
+    if (key === "name") return dir === "asc" ? "↑" : "↓";
+    return dir === "desc" ? "↓" : "↑";
+  };
 
   const copyReport = () => {
     let text = `📦 ${groupName} 사업물품 주문 보고서 (${roundFilter === "전체" ? "전체 기간" : roundFilter})\n\n`;
@@ -1449,7 +1483,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {aggSortOptions.map(s => (
-          <button key={s.id} onClick={() => setAggSort(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: aggSort === s.id ? C.navy : C.bg, color: aggSort === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label}</button>
+          <button key={s.id} onClick={() => clickAggSort(s.id)} style={{ border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", backgroundColor: aggSortKey === s.id ? C.navy : C.bg, color: aggSortKey === s.id ? "#fff" : C.muted, fontFamily: "inherit" }}>{s.label} {aggSortArrow(s.id)}</button>
         ))}
       </div>
 
@@ -1581,13 +1615,22 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
                 {groupList.map(g => {
                   const isOpen = expandedGroups.includes(g.groupId);
                   const unpaid = g.price - g.paid;
+                  const fullyDelivered = g.orderCount > 0 && g.deliveredCount === g.orderCount;
                   const groupOrders = (groupOrdersDetail[g.groupId] || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
                   return (
                     <div key={g.groupId} style={{ ...S.card, padding: 14 }}>
                       <div onClick={() => toggleGroupExpand(g.groupId)} style={{ cursor: "pointer" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                           <span style={{ fontWeight: 800, fontSize: 14.5, color: isOpen ? C.accent : C.ink }}>{g.name}</span>
-                          <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{g.qty}개</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                            <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{g.qty}개</span>
+                            <button
+                              onClick={() => toggleGroupDelivered(g.groupId, !fullyDelivered)}
+                              style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: fullyDelivered ? C.accentLight : C.bg, color: fullyDelivered ? C.accent : C.muted, fontSize: 10.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}
+                            >
+                              {fullyDelivered ? "✓ 전달완료" : "○ 미전달"}
+                            </button>
+                          </div>
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5, flexWrap: "wrap", gap: 6 }}>
                           <span style={{ fontWeight: 700 }}>{won(g.price)}</span>
@@ -1601,26 +1644,26 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
                             const oUnpaid = o.totalPrice - (o.paidAmount || 0);
                             return (
                               <div key={o.id} style={{ ...S.card, backgroundColor: C.surface, padding: 12 }}>
-                                <div style={{ marginBottom: 8 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                                   {o.items.map((it, i) => (
-                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", fontSize: 12.5, paddingBottom: 6, borderBottom: i < o.items.length - 1 ? `1px dashed ${C.border}` : "none" }}>
                                       <span style={{ fontWeight: 600 }}>{it.name}</span>
-                                      <span style={{ color: C.muted, flexShrink: 0, marginLeft: 8 }}>{it.qty}개 · {won(it.price * it.qty)}</span>
+                                      <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                                        <div>{it.qty}개 · {won(it.price * it.qty)}</div>
+                                        <div style={{ fontSize: 11, color: C.green }}>마진 {won((it.price - it.cost) * it.qty)}</div>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, flexWrap: "wrap", gap: 6, marginBottom: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                                  <span style={{ color: C.muted }}>{o.items.reduce((s, i) => s + i.qty, 0)}개</span>
-                                  <span style={{ fontWeight: 700 }}>{won(o.totalPrice)}</span>
-                                  <span style={{ fontWeight: 700, color: C.green }}>마진 {won(o.totalMargin)}</span>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, gap: 6, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                                   <span style={{ fontWeight: 700, color: oUnpaid > 0 ? C.red : C.muted }}>{oUnpaid > 0 ? `미수 ${won(oUnpaid)}` : "완결"}</span>
+                                  <button
+                                    onClick={() => toggleDelivered(o.id)}
+                                    style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+                                  >
+                                    {o.delivered ? "✓ 전달완료" : "○ 미전달"}
+                                  </button>
                                 </div>
-                                <button
-                                  onClick={() => toggleDelivered(o.id)}
-                                  style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: o.delivered ? C.accentLight : C.bg, color: o.delivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
-                                >
-                                  {o.delivered ? "✓ 전달완료" : "○ 미전달"}
-                                </button>
                               </div>
                             );
                           })}
@@ -1644,12 +1687,13 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
               <div style={{ overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640, tableLayout: "fixed" }}>
                 <colgroup>
-                  <col style={{ width: GROUP_COL_W.name }} /><col style={{ width: GROUP_COL_W.qty }} />
+                  <col style={{ width: GROUP_COL_W.name }} /><col style={{ width: GROUP_COL_W.delivered }} /><col style={{ width: GROUP_COL_W.qty }} />
                   <col style={{ width: GROUP_COL_W.price }} /><col style={{ width: GROUP_COL_W.margin }} /><col style={{ width: GROUP_COL_W.unpaid }} />
                 </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: C.bg }}>
                     <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>여선교회</th>
+                    <th style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>전달상태</th>
                     <th style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>주문수량</th>
                     {["총 판매가","총 마진","미수금"].map(h => (
                       <th key={h} style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: C.muted, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>{h}</th>
@@ -1658,15 +1702,25 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
                 </thead>
                 <tbody>
                   {groupList.length === 0
-                    ? <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
+                    ? <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.muted }}>주문 데이터가 없습니다</td></tr>
                     : groupList.map(g => {
                       const isOpen = expandedGroups.includes(g.groupId);
                       const unpaid = g.price - g.paid;
+                      const fullyDelivered = g.orderCount > 0 && g.deliveredCount === g.orderCount;
                       const groupOrders = (groupOrdersDetail[g.groupId] || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
                       return (
                         <React.Fragment key={g.groupId}>
                           <tr onClick={() => toggleGroupExpand(g.groupId)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", backgroundColor: isOpen ? C.accentLight : "transparent" }}>
                             <td style={{ padding: "11px 14px", fontWeight: 700, color: isOpen ? C.accent : C.ink }}>{g.name}</td>
+                            <td style={{ padding: "11px 14px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => toggleGroupDelivered(g.groupId, !fullyDelivered)}
+                                style={{ border: "none", cursor: "pointer", fontFamily: "inherit", backgroundColor: fullyDelivered ? C.accentLight : C.bg, color: fullyDelivered ? C.accent : C.muted, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}
+                                title="클릭해서 전달 상태 전환"
+                              >
+                                {fullyDelivered ? "✓ 전달완료" : "○ 미전달"}
+                              </button>
+                            </td>
                             <td style={{ padding: "11px 14px", textAlign: "right" }}>{g.qty}개</td>
                             <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700 }}>{won(g.price)}</td>
                             <td style={{ padding: "11px 14px", textAlign: "right", fontWeight: 700, color: C.green }}>{won(g.margin)}</td>
@@ -1674,7 +1728,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
                           </tr>
                           {isOpen && (
                             <tr>
-                              <td colSpan={5} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                              <td colSpan={6} style={{ padding: 0, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
                                 <div style={{ padding: "12px 16px" }} onClick={e => e.stopPropagation()}>
                                   <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 8 }}>주문 내역</div>
                                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -1725,6 +1779,7 @@ function OrderList({ orders, setOrders, rounds, currentRound, w, isHead, groupsL
                 {groupList.length > 0 && (
                   <tfoot><tr style={{ backgroundColor: C.accentLight, fontWeight: 800 }}>
                     <td style={{ padding: "11px 14px" }}>합계</td>
+                    <td style={{ padding: "11px 14px" }}></td>
                     <td style={{ padding: "11px 14px", textAlign: "right" }}>{groupList.reduce((s,g)=>s+g.qty,0)}개</td>
                     <td style={{ padding: "11px 14px", textAlign: "right" }}>{won(totalPrice)}</td>
                     <td style={{ padding: "11px 14px", textAlign: "right", color: C.green }}>{won(totalMargin)}</td>
@@ -2760,7 +2815,7 @@ function Dashboard() {
       case "entry": return <OrderEntry members={members} products={products} orders={orders} setOrders={setOrders} currentRound={currentRound} w={w} />;
       case "orders": return <OrderList orders={orders} setOrders={setOrders} rounds={rounds} currentRound={currentRound} w={w} isHead={isHead} groupsList={groupsList} />;
       case "rounds": return <RoundManager rounds={rounds} setRounds={setRounds} orders={orders} products={products} setProducts={setProducts} w={w} />;
-      case "products": return <ProductManager products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} w={w} />;
+      case "products": return <ProductManager products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} w={w} isHead={isHead} groupsList={groupsList} />;
       case "members": return <MemberRegistry members={members} setMembers={setMembers} orders={orders} rounds={rounds} w={w} isHead={isHead} groupsList={groupsList} />;
       case "quarterly": return <QuarterlyReport orders={orders} rounds={rounds} w={w} isHead={isHead} groupsList={groupsList} />;
       default: return null;
@@ -2798,22 +2853,30 @@ function Dashboard() {
           )}
           <div style={{ transform: isPulling ? `translateY(${pullY}px)` : "none", transition: isPulling ? "none" : "transform 0.25s ease" }}>
           <div style={{ position: "sticky", top: 0, zIndex: 200, backgroundColor: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 4px 10px rgba(15,46,79,0.06)", paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)", paddingBottom: 12, paddingLeft: 16, paddingRight: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontWeight: 900, fontSize: 18, color: C.accent }}>✝️ {groupName} 주문관리</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <SyncBadge status={syncStatus} />
-              <button onClick={logout} title="로그아웃" style={{ border: "none", backgroundColor: "transparent", fontSize: 18, cursor: "pointer", color: C.muted }}>🚪</button>
               <button onClick={() => setMenuOpen(true)} style={{ border: "none", backgroundColor: "transparent", fontSize: 20, cursor: "pointer" }}>☰</button>
+              <div onClick={() => goTo(isHead ? "orders" : "rounds")} style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 900, fontSize: 18, color: C.accent, cursor: "pointer" }}>
+                <img src="/logo192.png" alt="로고" style={{ width: 22, height: 22, borderRadius: 6 }} />
+                {groupName} 주문관리
+              </div>
             </div>
+            <SyncBadge status={syncStatus} />
           </div>
           {menuOpen && (
             <div style={{ position: "fixed", inset: 0, zIndex: 300, backgroundColor: "rgba(0,0,0,0.5)" }} onClick={() => setMenuOpen(false)}>
               <div style={{ position: "absolute", top: 0, left: 0, width: 250, height: "100%", backgroundColor: C.surface, padding: "20px 12px", paddingTop: "max(20px, calc(env(safe-area-inset-top, 0px) + 16px))" }} onClick={e => e.stopPropagation()}>
-                <div style={{ fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>✝️ {groupName} 주문관리</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 900, fontSize: 19, marginBottom: 20, padding: "0 8px", color: C.accent }}>
+                  <img src="/logo192.png" alt="로고" style={{ width: 24, height: 24, borderRadius: 6 }} />
+                  {groupName} 주문관리
+                </div>
                 {nav.map(n => (
                   <button key={n.id} onClick={() => !n.disabled && goTo(n.id)} disabled={n.disabled} title={n.disabled ? "사용하지 않음" : undefined} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: n.disabled ? "default" : "pointer", fontSize: 15, fontWeight: page === n.id ? 700 : 400, backgroundColor: page === n.id ? C.accentLight : "transparent", color: n.disabled ? C.border : (page === n.id ? C.accent : C.ink), opacity: n.disabled ? 0.6 : 1, marginBottom: 2, fontFamily: "inherit" }}>
                     <span style={{ fontSize: 18 }}>{n.icon}</span><span>{n.label}</span>
                   </button>
                 ))}
+                <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 10, paddingTop: 10 }}>
+                  <button onClick={() => { setMenuOpen(false); logout(); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, backgroundColor: "transparent", color: C.red, fontFamily: "inherit" }}>로그아웃</button>
+                </div>
               </div>
             </div>
           )}
@@ -2847,7 +2910,7 @@ function Dashboard() {
               물품 {products.length}개 · 회원 {members.length}명 · 주문 {orders.length}건
             </div>
             <div style={{ padding: "0 12px 14px" }}>
-              <button onClick={logout} style={{ ...S.btnGhost, width: "100%" }}>🚪 로그아웃</button>
+              <button onClick={logout} style={{ ...S.btnGhost, width: "100%" }}>로그아웃</button>
             </div>
           </div>
           <div style={{ flex: 1, padding: isTab(w) ? "24px" : "32px 36px", overflowY: "auto", maxHeight: "100vh" }}>

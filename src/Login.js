@@ -82,7 +82,7 @@ export default function Login() {
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 4 }}>비밀번호</label>
         <input
-          type="password" name="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
+          type="password" inputMode="numeric" pattern="[0-9]*" name="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
           style={inputStyle}
         />
 
