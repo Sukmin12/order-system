@@ -558,15 +558,15 @@ function ProductManager({ products, setProducts, orders, setOrders, w, isHead, g
           {!mob && <span style={{ fontSize: 11, color: C.muted, marginLeft: 8, whiteSpace: "nowrap" }}>클릭 선택 · 더블클릭 수정</span>}
         </div>
         <div style={{ overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 520 : 640 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: mob ? 600 : 680 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg }}>
               <th style={{ padding: "12px 10px", textAlign: "center", borderBottom: `2px solid ${C.border}`, width: 40 }}>
                 <input type="checkbox" checked={filtered.length > 0 && filtered.every(p => selectedProdIds.includes(p.id))} onChange={() => toggleProdSelectAll(filtered.map(p => p.id))} style={{ width: 15, height: 15, cursor: "pointer" }} />
               </th>
               <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", width: 56 }}>번호</th>
-              {["품명","매입원가(입고가)","판매가","마진"].map(h => (
-                <th key={h} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap" }}>{h}</th>
+              {[{ h: "품명", w: 140 }, { h: "매입원가(입고가)", w: 110 }, { h: "판매가", w: 90 }, { h: "마진", w: 90 }].map(({ h, w: cw }) => (
+                <th key={h} style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", minWidth: cw }}>{h}</th>
               ))}
               {isHead && <th style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: C.muted, borderBottom: `2px solid ${C.border}`, fontSize: 11.5, whiteSpace: "nowrap", minWidth: 100 }}>여선교회</th>}
             </tr>
@@ -592,7 +592,7 @@ function ProductManager({ products, setProducts, orders, setOrders, w, isHead, g
                       <input type="checkbox" checked={isSelected} onChange={() => toggleProdSelect(p.id)} style={{ width: 15, height: 15, cursor: "pointer" }} />
                     </td>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted, fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: isSelected ? C.accent : C.ink }}>{p.name}</td>
+                    <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: isSelected ? C.accent : C.ink, whiteSpace: "nowrap" }}>{p.name}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", color: C.muted }}>{won(p.cost)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 600 }}>{won(p.price)}</td>
                     <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: m >= 0 ? C.green : C.red }}>{won(m)}</td>
