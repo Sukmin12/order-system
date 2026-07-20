@@ -68,16 +68,24 @@ const SHEET_MAP = {
   "order-orders": "orders",
 };
 
+// 🤖 예전에는 "그룹 데이터 전체 삭제 후 재삽입" 방식이었는데, 삭제는 성공하고 삽입만 실패(네트워크 오류 등)하면
+// 그 사이에 기존 데이터가 통째로 날아가는 사고가 있었음. upsert로 먼저 저장을 확정하고, 그게 성공했을 때만
+// 로컬에 더 이상 없는 행을 정리(delete)하는 순서로 바꿔서 실패해도 기존 데이터가 보존되게 함.
 const saveSynced = async (key, value, groupId) => {
   if (groupId) save(`${key}-${groupId}`, value);
   const tableName = SHEET_MAP[key];
   if (!tableName || !groupId) return;
   try {
-    await supabase.from(tableName).delete().eq("groupId", groupId);
-    if (value && value.length > 0) {
-      const withGroup = value.map(v => ({ ...v, groupId }));
-      const { error } = await supabase.from(tableName).insert(withGroup);
-      if (error) console.error(tableName, "동기화 실패:", error.message);
+    const rows = (value || []).map(v => ({ ...v, groupId }));
+    if (rows.length > 0) {
+      const { error: upsertError } = await supabase.from(tableName).upsert(rows, { onConflict: "id" });
+      if (upsertError) { console.error(tableName, "동기화 실패:", upsertError.message); return; }
+      const idList = rows.map(r => `"${r.id}"`).join(",");
+      const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId).not("id", "in", `(${idList})`);
+      if (deleteError) console.error(tableName, "정리 실패:", deleteError.message);
+    } else {
+      const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId);
+      if (deleteError) console.error(tableName, "동기화 실패:", deleteError.message);
     }
   } catch (err) {
     console.error(tableName, "동기화 실패:", err);
@@ -2835,6 +2843,21 @@ function Dashboard() {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: C.bg, fontFamily: "'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif", color: C.ink }}>
+      {/* 🤖 기존 데이터를 다 불러오기 전에 주문/회원/물품을 건드리면, 아직 비어있는 상태로 서버에 덮어써서
+          기존 데이터가 사라지는 사고로 이어질 수 있어 초기 동기화가 끝날 때까지 화면 입력을 막음 */}
+      {syncStatus === "loading" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, backgroundColor: "rgba(244,248,252,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <div style={{ fontSize: 32 }}>⏳</div>
+          <div style={{ fontSize: 14, color: C.muted, fontWeight: 600 }}>기존 데이터를 불러오는 중입니다...</div>
+        </div>
+      )}
+      {syncStatus === "error" && !showUploadPrompt && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, backgroundColor: "rgba(244,248,252,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 20, textAlign: "center" }}>
+          <div style={{ fontSize: 32 }}>⚠️</div>
+          <div style={{ fontSize: 14, color: C.ink, fontWeight: 700 }}>기존 데이터를 불러오지 못했어요.<br />이 상태로 저장하면 기존 데이터가 사라질 수 있어요.</div>
+          <button style={S.btn()} onClick={() => window.location.reload()}>새로고침해서 다시 시도</button>
+        </div>
+      )}
       {showUploadPrompt && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, backgroundColor: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ backgroundColor: C.surface, borderRadius: 16, padding: mob ? "28px 22px" : "36px 32px", maxWidth: 420, width: "100%", textAlign: "center" }}>
