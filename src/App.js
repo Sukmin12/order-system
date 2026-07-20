@@ -68,6 +68,13 @@ const SHEET_MAP = {
   "order-orders": "orders",
 };
 
+// 🤖 저장 실패는 console.error만으로는 아무도 못 알아채서(이번 사고도 그래서 늦게 발견됨),
+// window 커스텀 이벤트로 쏴서 Dashboard가 화면에 경고 배너를 띄우게 함
+const SYNC_ERROR_EVENT = "order-sync-error";
+const notifySyncError = (tableName, message) => {
+  window.dispatchEvent(new CustomEvent(SYNC_ERROR_EVENT, { detail: { tableName, message } }));
+};
+
 // 🤖 예전에는 "그룹 데이터 전체 삭제 후 재삽입" 방식이었는데, 삭제는 성공하고 삽입만 실패(네트워크 오류 등)하면
 // 그 사이에 기존 데이터가 통째로 날아가는 사고가 있었음. upsert로 먼저 저장을 확정하고, 그게 성공했을 때만
 // 로컬에 더 이상 없는 행을 정리(delete)하는 순서로 바꿔서 실패해도 기존 데이터가 보존되게 함.
@@ -79,16 +86,17 @@ const saveSynced = async (key, value, groupId) => {
     const rows = (value || []).map(v => ({ ...v, groupId }));
     if (rows.length > 0) {
       const { error: upsertError } = await supabase.from(tableName).upsert(rows, { onConflict: "id" });
-      if (upsertError) { console.error(tableName, "동기화 실패:", upsertError.message); return; }
+      if (upsertError) { console.error(tableName, "동기화 실패:", upsertError.message); notifySyncError(tableName, upsertError.message); return; }
       const idList = rows.map(r => `"${r.id}"`).join(",");
       const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId).not("id", "in", `(${idList})`);
-      if (deleteError) console.error(tableName, "정리 실패:", deleteError.message);
+      if (deleteError) { console.error(tableName, "정리 실패:", deleteError.message); notifySyncError(tableName, deleteError.message); }
     } else {
       const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId);
-      if (deleteError) console.error(tableName, "동기화 실패:", deleteError.message);
+      if (deleteError) { console.error(tableName, "동기화 실패:", deleteError.message); notifySyncError(tableName, deleteError.message); }
     }
   } catch (err) {
     console.error(tableName, "동기화 실패:", err);
+    notifySyncError(tableName, err.message || String(err));
   }
 };
 
@@ -2738,8 +2746,16 @@ function Dashboard() {
   const [groupsList, setGroupsList] = useState([]);
   const [syncStatus, setSyncStatus] = useState("loading");
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
+  const [syncErrorBanner, setSyncErrorBanner] = useState(null);
   useEscapeClose(menuOpen, () => setMenuOpen(false));
   useEscapeClose(showUploadPrompt, () => setShowUploadPrompt(false));
+
+  // 🤖 저장(saveSynced) 실패를 화면에 알려서, 방금 입력한 게 저장 안 된 걸 사용자가 바로 알 수 있게 함
+  useEffect(() => {
+    const handler = (e) => setSyncErrorBanner(e.detail);
+    window.addEventListener(SYNC_ERROR_EVENT, handler);
+    return () => window.removeEventListener(SYNC_ERROR_EVENT, handler);
+  }, []);
 
   // 🤖 본부(head) 계정이 그룹명을 표시/필터할 수 있도록 groups 목록을 가져옴
   useEffect(() => {
@@ -2856,6 +2872,15 @@ function Dashboard() {
           <div style={{ fontSize: 32 }}>⚠️</div>
           <div style={{ fontSize: 14, color: C.ink, fontWeight: 700 }}>기존 데이터를 불러오지 못했어요.<br />이 상태로 저장하면 기존 데이터가 사라질 수 있어요.</div>
           <button style={S.btn()} onClick={() => window.location.reload()}>새로고침해서 다시 시도</button>
+        </div>
+      )}
+      {/* 🤖 방금 한 입력/수정이 서버 저장에 실패했을 때 바로 알려주는 배너 — 데이터 자체는 upsert 방식이라
+          지워지지 않지만, 실패한 걸 모른 채 넘어가면 다음에 열었을 때 없어져있는 것처럼 보일 수 있음 */}
+      {syncErrorBanner && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 3000, backgroundColor: C.red, color: "#fff", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap", fontSize: 13, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+          <span>⚠️ 방금 변경사항이 저장되지 않았어요 ({syncErrorBanner.tableName}: {syncErrorBanner.message})</span>
+          <button onClick={() => window.location.reload()} style={{ backgroundColor: "#fff", color: C.red, border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>새로고침</button>
+          <button onClick={() => setSyncErrorBanner(null)} style={{ backgroundColor: "transparent", color: "#fff", border: "1.5px solid #fff", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>닫기</button>
         </div>
       )}
       {showUploadPrompt && (
