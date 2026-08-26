@@ -87,6 +87,14 @@ const saveSynced = async (key, value, groupId) => {
     if (rows.length > 0) {
       const { error: upsertError } = await supabase.from(tableName).upsert(rows, { onConflict: "id" });
       if (upsertError) { console.error(tableName, "동기화 실패:", upsertError.message); notifySyncError(tableName, upsertError.message); return; }
+      // 추가 안전장치: 서버에 append-only 백업 테이블에 스냅샷을 남김
+      try {
+        const { error: backupError } = await supabase.from("order_backups").insert([{ table_name: tableName, group_id: groupId, snapshot: rows }]);
+        if (backupError) { console.error(tableName, "백업 저장 실패:", backupError.message); notifySyncError(tableName, backupError.message); }
+      } catch (err) {
+        console.error(tableName, "백업 저장 실패:", err);
+        notifySyncError(tableName, err.message || String(err));
+      }
       const idList = rows.map(r => `"${r.id}"`).join(",");
       const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId).not("id", "in", `(${idList})`);
       if (deleteError) { console.error(tableName, "정리 실패:", deleteError.message); notifySyncError(tableName, deleteError.message); }
