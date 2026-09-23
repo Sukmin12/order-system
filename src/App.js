@@ -75,6 +75,19 @@ const notifySyncError = (tableName, message) => {
   window.dispatchEvent(new CustomEvent(SYNC_ERROR_EVENT, { detail: { tableName, message } }));
 };
 
+// 기록: 최근 sync 실패를 localStorage에 보관(디버깅용)
+const recordSyncError = (tableName, err, ctx = {}) => {
+  try {
+    const prev = load('sync_errors', []);
+    const entry = { time: new Date().toISOString(), tableName, message: err && (err.message || String(err)), ctx };
+    prev.unshift(entry);
+    if (prev.length > 200) prev.length = 200;
+    save('sync_errors', prev);
+  } catch (e) {
+    console.error('recordSyncError failed', e);
+  }
+};
+
 // 🤖 예전에는 "그룹 데이터 전체 삭제 후 재삽입" 방식이었는데, 삭제는 성공하고 삽입만 실패(네트워크 오류 등)하면
 // 그 사이에 기존 데이터가 통째로 날아가는 사고가 있었음. upsert로 먼저 저장을 확정하고, 그게 성공했을 때만
 // 로컬에 더 이상 없는 행을 정리(delete)하는 순서로 바꿔서 실패해도 기존 데이터가 보존되게 함.
@@ -82,29 +95,87 @@ const saveSynced = async (key, value, groupId) => {
   if (groupId) save(`${key}-${groupId}`, value);
   const tableName = SHEET_MAP[key];
   if (!tableName || !groupId) return;
-  try {
-    const rows = (value || []).map(v => ({ ...v, groupId }));
-    if (rows.length > 0) {
-      const { error: upsertError } = await supabase.from(tableName).upsert(rows, { onConflict: "id" });
-      if (upsertError) { console.error(tableName, "동기화 실패:", upsertError.message); notifySyncError(tableName, upsertError.message); return; }
-      // 추가 안전장치: 서버에 append-only 백업 테이블에 스냅샷을 남김
+  // helper: retry an async fn up to n times with delay
+  const retry = async (fn, attempts = 3, delay = 500) => {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
       try {
-        const { error: backupError } = await supabase.from("order_backups").insert([{ table_name: tableName, group_id: groupId, snapshot: rows }]);
-        if (backupError) { console.error(tableName, "백업 저장 실패:", backupError.message); notifySyncError(tableName, backupError.message); }
+        return await fn();
       } catch (err) {
-        console.error(tableName, "백업 저장 실패:", err);
-        notifySyncError(tableName, err.message || String(err));
+        lastErr = err;
+        await new Promise(r => setTimeout(r, delay * (i + 1)));
       }
-      const idList = rows.map(r => `"${r.id}"`).join(",");
-      const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId).not("id", "in", `(${idList})`);
-      if (deleteError) { console.error(tableName, "정리 실패:", deleteError.message); notifySyncError(tableName, deleteError.message); }
-    } else {
-      const { error: deleteError } = await supabase.from(tableName).delete().eq("groupId", groupId);
-      if (deleteError) { console.error(tableName, "동기화 실패:", deleteError.message); notifySyncError(tableName, deleteError.message); }
     }
+    throw lastErr;
+  };
+
+  // 🤖 백업 API 인증: 브라우저에 비밀값을 두지 않고, 로그인 세션의 access token을 서버에 보내서
+  // 서버가 Supabase에 "이 토큰이 진짜 로그인한 사용자인지 + 어느 여선교회인지" 직접 확인하게 함
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || '';
+  };
+
+  const rows = (value || []).map(v => ({ ...v, groupId }));
+  if (rows.length === 0) {
+    try {
+      await retry(async () => {
+        const { error } = await supabase.from(tableName).delete().eq("groupId", groupId);
+        if (error) throw error;
+        return true;
+      });
+      return true;
+    } catch (err) {
+      console.error(tableName, "정리 실패:", err);
+      notifySyncError(tableName, err.message || String(err));
+      recordSyncError(tableName, err, { step: 'delete-empty', groupId });
+      return false;
+    }
+  }
+
+  try {
+    // 1) upsert rows (retry transient failures)
+    await retry(async () => {
+      const { error } = await supabase.from(tableName).upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+      return true;
+    });
+
+    // 2) create server-side append-only backup via protected server endpoint (best-effort)
+    try {
+      await retry(async () => {
+        const token = await getAccessToken();
+        if (!token) throw new Error("로그인 세션 없음");
+        const res = await fetch('/api/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ table_name: tableName, group_id: groupId, snapshot: rows }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`backup endpoint error ${res.status}: ${txt}`);
+        }
+        return true;
+      });
+    } catch (err) {
+      console.error(tableName, "백업 엔드포인트 실패(무시, 계속 진행):", err);
+      // 백업 실패는 사용자에게 경고하지 않고 로그로만 남김
+    }
+
+    // 3) delete rows on server that are not in the new list (retry)
+    const idList = rows.map(r => `"${r.id}"`).join(",");
+    await retry(async () => {
+      const { error } = await supabase.from(tableName).delete().eq("groupId", groupId).not("id", "in", `(${idList})`);
+      if (error) throw error;
+      return true;
+    });
+
+    return true;
   } catch (err) {
     console.error(tableName, "동기화 실패:", err);
     notifySyncError(tableName, err.message || String(err));
+    recordSyncError(tableName, err, { step: 'full-sync', rowsCount: rows.length });
+    return false;
   }
 };
 
