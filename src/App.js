@@ -2769,8 +2769,8 @@ function Dashboard() {
   const cacheScope = groupId ?? "head";
   const w = useWidth();
   const mob = isMob(w);
-  const [page, setPageRaw] = useState(() => load("order-current-page", "entry"));
-  const setPage = (id) => { setPageRaw(id); save("order-current-page", id); };
+  // 🤖 접속(로그인)하면 항상 주문 리스트부터 보여줌
+  const [page, setPage] = useState("orders");
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { if (groupName) document.title = `${groupName} 주문관리`; }, [groupName]);
