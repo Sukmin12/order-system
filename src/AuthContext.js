@@ -27,19 +27,30 @@ export function AuthProvider({ children }) {
       setRole(data?.role ?? "group");
     };
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // 🤖 onAuthStateChange 콜백은 Supabase 인증 잠금을 잡은 채 실행돼서, 그 안에서 DB 조회를 await하면
+    // 조회가 같은 잠금을 기다리며 서로 멈춤(데드락) → "불러오는 중..."에서 영원히 멈추는 원인이었음.
+    // 그래서 콜백은 즉시 끝내고 프로필 조회는 setTimeout으로 다음 틱에 실행.
+    // 또 처음 접속 시 INITIAL_SESSION 이벤트가 오므로 getSession을 따로 부르지 않음.
+    let currentUserId; // 아직 아무 세션도 처리 안 함(undefined)
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
-      setUser(session?.user ?? null);
-      await loadProfile(session?.user ?? null);
-      if (!cancelled) setLoading(false);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (cancelled) return;
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+      const nextId = nextUser?.id ?? null;
+      // 토큰 갱신처럼 같은 사용자 이벤트면 프로필을 다시 불러오지 않음(화면이 로딩으로 깜빡이며 초기화되는 것 방지)
+      if (nextId === currentUserId) return;
+      currentUserId = nextId;
       setLoading(true);
-      setUser(session?.user ?? null);
-      await loadProfile(session?.user ?? null);
-      if (!cancelled) setLoading(false);
+      setTimeout(async () => {
+        try {
+          await loadProfile(nextUser);
+        } catch (err) {
+          console.error("프로필 조회 중 오류:", err);
+          setGroupId(null); setGroupName(null); setRole(null);
+        } finally {
+          if (!cancelled && currentUserId === nextId) setLoading(false);
+        }
+      }, 0);
     });
 
     return () => {

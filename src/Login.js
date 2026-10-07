@@ -102,7 +102,8 @@ export default function Login() {
 
         {/* 🤖 테스트 기간 임시 안내 — 실사용 전환 시 반드시 제거 */}
         <div style={{ fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
-          (테스트용) 로이스1~6 비밀번호: 0001~0006
+          (테스트용) 본부 비밀번호: 0000<br />
+          로이스1~6 비밀번호: 0001~0006
         </div>
       </form>
     </div>
